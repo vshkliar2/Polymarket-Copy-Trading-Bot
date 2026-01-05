@@ -1,4 +1,6 @@
-# Polymarket Copy Trading Bot
+# Polymarket Copy Trading Bot - Automated Trading Bot for Polymarket Prediction Markets
+
+<!-- SEO Meta Description: Best Polymarket copy trading bot for automated trading. Mirror top traders on Polymarket with intelligent position sizing, real-time execution, and 24/7 monitoring. Free open-source TypeScript trading bot for Polygon blockchain. -->
 
 <div align="center">
 
@@ -8,8 +10,9 @@
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8.9-green.svg)](https://www.mongodb.com/)
+[![GitHub Stars](https://img.shields.io/github/stars/earthskyorg/polymarket-copy-trading-bot?style=social)](https://github.com/earthskyorg/polymarket-copy-trading-bot)
 
-[Features](#-features) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [Support](#-support)
+[Features](#-features) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [FAQ](#-frequently-asked-questions) • [Support](#-support)
 
 </div>
 
@@ -24,6 +27,7 @@
 - [Configuration](#-configuration)
 - [Docker Deployment](#-docker-deployment)
 - [Documentation](#-documentation)
+- [Frequently Asked Questions](#-frequently-asked-questions)
 - [Advanced Version](#-advanced-version)
 - [License](#-license)
 - [Acknowledgments](#-acknowledgments)
@@ -32,7 +36,11 @@
 
 ## 🎯 Overview
 
-The Polymarket  (copytrading) Bot is an enterprise-grade automated trading solution that replicates trades from successful Polymarket traders directly to your wallet. The system provides continuous 24/7 monitoring, intelligent position sizing calculations, and real-time order execution with comprehensive trade tracking.
+The **Polymarket Copy Trading Bot** is the leading open-source automated trading solution for Polymarket prediction markets. This enterprise-grade trading bot automatically replicates trades from successful Polymarket traders directly to your wallet, enabling you to mirror top performers without manual intervention. The system provides continuous 24/7 monitoring, intelligent position sizing calculations, and real-time order execution with comprehensive trade tracking.
+
+### What is Polymarket Copy Trading?
+
+Copy trading on Polymarket allows you to automatically mirror the trades of successful traders. When a trader you're following makes a trade, this bot instantly replicates it in your wallet with proportional position sizing based on your capital. This is the most effective way to leverage the expertise of top Polymarket traders while maintaining full control over your funds.
 
 ### Key Capabilities
 
@@ -47,7 +55,7 @@ The Polymarket  (copytrading) Bot is an enterprise-grade automated trading solut
 
 <div align="center">
 
-<img width="995" height="691" alt="Polymarket Copy Trading Bot Workflow" src="https://github.com/user-attachments/assets/79715c7a-de2c-4033-81e6-b2288963ec9b" />
+<img width="995" height="691" alt="Polymarket Copy Trading Bot Workflow - Automated Trading Process Diagram showing trader selection, monitoring, calculation, execution, and tracking" src="https://github.com/user-attachments/assets/79715c7a-de2c-4033-81e6-b2288963ec9b" />
 
 </div>
 
@@ -84,24 +92,30 @@ The Polymarket  (copytrading) Bot is an enterprise-grade automated trading solut
 
 ### Core Functionality
 
+This Polymarket copy trading bot provides enterprise-grade features for automated trading on Polymarket prediction markets:
+
 | Feature | Description |
 |---------|-------------|
-| **Multi-Trader Support** | Track and copy trades from multiple traders simultaneously with independent configuration |
-| **Smart Position Sizing** | Automatically adjusts trade sizes based on your capital relative to trader's capital |
-| **Tiered Multipliers** | Apply different multipliers based on trade size ranges for sophisticated risk management |
-| **Position Tracking** | Accurately tracks purchases and sells even after balance changes with historical context |
-| **Trade Aggregation** | Combines multiple small trades into larger executable orders to optimize execution |
-| **Real-Time Execution** | Monitors trades every second and executes instantly with minimal latency |
-| **MongoDB Integration** | Persistent storage of all trades, positions, and historical data |
-| **Price Protection** | Built-in slippage checks and price validation to avoid unfavorable fills |
+| **Multi-Trader Support** | Track and copy trades from multiple Polymarket traders simultaneously with independent configuration for each trader |
+| **Smart Position Sizing** | Automatically adjusts trade sizes based on your capital relative to trader's capital, ensuring proportional risk management |
+| **Tiered Multipliers** | Apply different multipliers based on trade size ranges for sophisticated risk management and capital allocation |
+| **Position Tracking** | Accurately tracks purchases and sells even after balance changes with complete historical context |
+| **Trade Aggregation** | Combines multiple small trades into larger executable orders to optimize execution and reduce gas costs |
+| **Real-Time Execution** | Monitors Polymarket trades every second and executes instantly with minimal latency for optimal entry prices |
+| **MongoDB Integration** | Persistent storage of all trades, positions, and historical data for comprehensive analytics |
+| **Price Protection** | Built-in slippage checks and price validation to avoid unfavorable fills and protect your capital |
+| **24/7 Monitoring** | Continuous automated monitoring of selected traders without manual intervention |
+| **Open Source** | Free and open-source codebase allowing full transparency and customization |
 
 ### Technical Specifications
 
-- **Monitoring Method**: Polymarket Data API with configurable polling intervals
-- **Default Polling Interval**: 1 second (configurable via `FETCH_INTERVAL`)
-- **Database**: MongoDB for persistent storage and analytics
-- **Network**: Polygon blockchain for low-cost transactions
-- **Architecture**: TypeScript-based modular design with comprehensive error handling
+- **Monitoring Method**: Polymarket Data API with configurable polling intervals for real-time trade detection
+- **Default Polling Interval**: 1 second (configurable via `FETCH_INTERVAL`) for optimal balance between speed and API usage
+- **Database**: MongoDB for persistent storage and analytics of all trading activity
+- **Network**: Polygon blockchain for low-cost transactions and efficient gas usage
+- **Architecture**: TypeScript-based modular design with comprehensive error handling and logging
+- **Language**: Built with TypeScript for type safety and maintainability
+- **Deployment**: Supports Docker deployment for easy setup and production use
 
 ---
 
@@ -218,6 +232,68 @@ docker-compose logs -f bot
 
 ---
 
+## ❓ Frequently Asked Questions
+
+### What is a Polymarket Copy Trading Bot?
+
+A Polymarket copy trading bot is an automated software that monitors successful traders on Polymarket and automatically replicates their trades in your wallet. This bot provides 24/7 monitoring, intelligent position sizing, and real-time execution to mirror top-performing traders.
+
+### How does the Polymarket trading bot work?
+
+The bot continuously monitors selected traders using the Polymarket Data API. When a trader makes a trade, the bot calculates the proportional position size based on your capital, applies configured multipliers, and executes the trade on your behalf with minimal latency.
+
+### Is this Polymarket bot free and open source?
+
+Yes! This is a completely free and open-source Polymarket copy trading bot. The code is available on GitHub under the ISC license, allowing you to use, modify, and distribute it freely.
+
+### What are the requirements to run this Polymarket automated trading bot?
+
+You need:
+- Node.js v18.0.0 or higher
+- MongoDB database (free tier available on MongoDB Atlas)
+- Polygon wallet with USDC and POL/MATIC for gas fees
+- RPC endpoint (free tier available on Infura or Alchemy)
+
+### How do I find the best Polymarket traders to copy?
+
+1. Visit the [Polymarket Leaderboard](https://polymarket.com/leaderboard)
+2. Look for traders with positive P&L over extended periods
+3. Verify statistics on [Predictfolio](https://predictfolio.com)
+4. Add their wallet addresses to your bot configuration
+
+### Can I copy multiple Polymarket traders at once?
+
+Yes! The bot supports multi-trader functionality, allowing you to copy trades from multiple traders simultaneously with independent configuration for each trader.
+
+### Is this bot safe to use?
+
+The bot is open-source, allowing you to review all code. Your private keys are stored locally and never transmitted. The bot only executes trades you've configured, and you maintain full control over your funds at all times.
+
+### What is the difference between this bot and manual trading on Polymarket?
+
+This automated bot provides:
+- 24/7 monitoring without manual oversight
+- Instant trade replication (sub-second latency)
+- Intelligent position sizing based on capital ratios
+- Comprehensive trade history and analytics
+- Ability to copy multiple traders simultaneously
+
+### How much does it cost to run this Polymarket bot?
+
+The bot itself is free. You only pay for:
+- Polygon network gas fees (typically very low)
+- Optional MongoDB Atlas hosting (free tier available)
+- Optional RPC endpoint (free tier available)
+
+### Can I customize the trading strategy?
+
+Yes! The bot supports:
+- Custom position multipliers
+- Tiered multipliers based on trade size
+- Configurable polling intervals
+- Multiple trader configurations
+- Risk management rules
+
 ## 🚀 Advanced Version
 
 ### Version 2.0 - RTDS (Real-Time Data Stream)
@@ -239,13 +315,13 @@ An advanced version with **Real-Time Data Stream (RTDS)** monitoring is availabl
 
 ---
 
-## 🛠️ Trading Tool
+## 🛠️ High-Performance Rust Trading Bot
 
-A high-performance trading bot for Polymarket built with **Rust** is also available.
+A high-performance trading bot for Polymarket built with **Rust** is also available for advanced users seeking maximum performance.
 
 <div align="center">
 
-<img width="1917" height="942" alt="Rust Trading Bot" src="https://github.com/user-attachments/assets/08a5c962-7f8b-4097-98b6-7a457daa37c9" />
+<img width="1917" height="942" alt="Rust Trading Bot for Polymarket - High Performance Automated Trading Interface" src="https://github.com/user-attachments/assets/08a5c962-7f8b-4097-98b6-7a457daa37c9" />
 
 [Watch Demo Video](https://www.youtube.com/watch?v=0uUI_ht_2eY)
 
@@ -265,7 +341,11 @@ This project is built using the following technologies and services:
 
 - **[Polymarket CLOB Client](https://github.com/Polymarket/clob-client)** - Official Polymarket trading client library
 - **[Predictfolio](https://predictfolio.com)** - Trader analytics and performance metrics
-- **Polygon Network** - Low-cost blockchain infrastructure
+- **Polygon Network** - Low-cost blockchain infrastructure for efficient trading
+
+## 🔍 Related Searches
+
+If you're looking for a Polymarket copy trading bot, automated trading bot for Polymarket, Polymarket trading automation, copy trading strategy, or Polymarket bot tutorial, you've found the right solution. This is the best free open-source Polymarket trading bot available.
 
 ---
 

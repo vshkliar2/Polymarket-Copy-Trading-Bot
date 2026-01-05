@@ -1,7 +1,7 @@
 {
     "name": "polymarket-copy-trading-bot",
     "version": "1.0.0",
-    "description": "Automated copy trading bot for Polymarket that mirrors trades from top performers with intelligent position sizing and real-time execution",
+    "description": "Best free open-source Polymarket copy trading bot - Automatically mirror top traders on Polymarket prediction markets with intelligent position sizing, real-time execution, and 24/7 monitoring. TypeScript trading bot for Polygon blockchain.", 
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "engines": {
@@ -60,15 +60,32 @@
     },
     "keywords": [
         "polymarket",
+        "polymarket-bot",
+        "polymarket-trading-bot",
+        "polymarket-copy-trading",
+        "polymarket-automated-trading",
         "copy-trading",
+        "copy-trading-bot",
         "trading-bot",
         "automated-trading",
-        "defi",
+        "automated-trading-bot",
         "prediction-markets",
+        "prediction-market-bot",
+        "defi",
+        "defi-trading",
         "ethereum",
         "polygon",
+        "polygon-blockchain",
         "typescript",
-        "blockchain"
+        "typescript-trading-bot",
+        "blockchain",
+        "blockchain-trading",
+        "mirror-trading",
+        "social-trading",
+        "algorithmic-trading",
+        "crypto-trading-bot",
+        "open-source-trading-bot",
+        "free-trading-bot"
     ],
     "author": {
         "name": "earthskyorg",
