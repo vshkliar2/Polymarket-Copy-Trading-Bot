@@ -5,6 +5,7 @@ import tradeExecutor, { stopTradeExecutor } from './services/tradeExecutor';
 import tradeMonitor, { stopTradeMonitor } from './services/tradeMonitor';
 import Logger from './utils/logger';
 import { performHealthCheck, logHealthCheck } from './utils/healthCheck';
+import TelegramNotifier from './services/telegramNotifier';
 
 const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const PROXY_WALLET = ENV.PROXY_WALLET;
@@ -31,6 +32,9 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
     Logger.info(`Received ${signal}, initiating graceful shutdown...`);
 
     try {
+        // Send shutdown notification
+        await TelegramNotifier.notifyShutdown();
+
         // Stop services
         stopTradeMonitor();
         stopTradeExecutor();
@@ -137,12 +141,23 @@ export const main = async (): Promise<void> => {
 
         Logger.info('Starting trade executor...');
         tradeExecutor(clobClient);
+
+        // Send startup notification
+        await TelegramNotifier.notifyStartup();
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         Logger.error(`Fatal error during startup: ${errorMessage}`);
         if (error instanceof Error && error.stack) {
             Logger.error(`Stack trace: ${error.stack}`);
         }
+
+        // Send error notification
+        await TelegramNotifier.notifyError({
+            title: 'Bot Startup Failed',
+            message: errorMessage,
+            severity: 'critical',
+        });
+
         await gracefulShutdown('startup-error');
     }
 };

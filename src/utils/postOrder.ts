@@ -8,6 +8,7 @@ import {
     extractErrorMessage,
     isInsufficientBalanceOrAllowanceError,
 } from './errorHelpers';
+import TelegramNotifier from '../services/telegramNotifier';
 
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 const COPY_STRATEGY_CONFIG = ENV.COPY_STRATEGY_CONFIG;
@@ -95,6 +96,20 @@ const postOrder = async (
                     true,
                     `Sold ${order_arges.amount} tokens at $${order_arges.price}`
                 );
+
+                // Send Telegram notification for successful SELL trade (initial position close)
+                TelegramNotifier.notifyTrade({
+                    market: trade.slug || 'Unknown Market',
+                    side: 'SELL',
+                    amount: order_arges.amount * order_arges.price, // Convert tokens to USD
+                    price: order_arges.price,
+                    traderAddress: userAddress,
+                    success: true,
+                }).catch((err) => {
+                    const errorMsg = err instanceof Error ? err.message : String(err);
+                    Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
+                });
+
                 remaining -= order_arges.amount;
             } else {
                 const errorMessage = extractErrorMessage(resp);
@@ -227,6 +242,20 @@ const postOrder = async (
                     true,
                     `Bought $${order_arges.amount.toFixed(2)} at $${order_arges.price} (${tokensBought.toFixed(2)} tokens)`
                 );
+
+                // Send Telegram notification for successful trade
+                TelegramNotifier.notifyTrade({
+                    market: trade.slug || 'Unknown Market',
+                    side: 'BUY',
+                    amount: order_arges.amount,
+                    price: order_arges.price,
+                    traderAddress: userAddress,
+                    success: true,
+                }).catch((err) => {
+                    const errorMsg = err instanceof Error ? err.message : String(err);
+                    Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
+                });
+
                 remaining -= order_arges.amount;
             } else {
                 const errorMessage = extractErrorMessage(resp);
@@ -426,6 +455,20 @@ const postOrder = async (
                     true,
                     `Sold ${order_arges.amount} tokens at $${order_arges.price}`
                 );
+
+                // Send Telegram notification for successful SELL trade
+                TelegramNotifier.notifyTrade({
+                    market: trade.slug || 'Unknown Market',
+                    side: 'SELL',
+                    amount: order_arges.amount * order_arges.price, // Convert tokens to USD
+                    price: order_arges.price,
+                    traderAddress: userAddress,
+                    success: true,
+                }).catch((err) => {
+                    const errorMsg = err instanceof Error ? err.message : String(err);
+                    Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
+                });
+
                 remaining -= order_arges.amount;
             } else {
                 const errorMessage = extractErrorMessage(resp);

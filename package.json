@@ -1,7 +1,7 @@
 {
     "name": "polymarket-copy-trading-bot",
     "version": "1.0.0",
-    "description": "Best free open-source Polymarket copy trading bot - Automatically mirror top traders on Polymarket prediction markets with intelligent position sizing, real-time execution, and 24/7 monitoring. TypeScript trading bot for Polygon blockchain.", 
+    "description": "Best free open-source Polymarket copy trading bot - Automatically mirror top traders on Polymarket prediction markets with intelligent position sizing, real-time execution, and 24/7 monitoring. TypeScript trading bot for Polygon blockchain.",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "engines": {
@@ -115,12 +115,14 @@
     },
     "dependencies": {
         "@polymarket/clob-client": "^4.14.0",
+        "@types/node-telegram-bot-api": "^0.64.13",
         "axios": "^1.7.9",
         "chalk": "^5.4.1",
         "dotenv": "^16.4.7",
         "ethers": "^5.8.0",
         "moment": "^2.30.1",
         "mongoose": "^8.9.5",
+        "node-telegram-bot-api": "^0.67.0",
         "ora": "^8.2.0"
     }
 }
