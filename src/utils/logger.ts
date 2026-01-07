@@ -267,7 +267,7 @@ class Logger {
     ) {
         console.log('\n' + chalk.cyan("📈 TRADERS YOU'RE COPYING"));
         traders.forEach((address, index) => {
-            const count = positionCounts[index];
+            const count = positionCounts[index] ?? 0;
             const countStr =
                 count > 0
                     ? chalk.green(`${count} position${count > 1 ? 's' : ''}`)

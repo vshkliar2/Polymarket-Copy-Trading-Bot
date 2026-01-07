@@ -322,8 +322,8 @@ export function parseTieredMultipliers(tiersStr: string): MultiplierTier[] {
         } else if (range.includes('-')) {
             // Bounded range: "100-500"
             const [minStr, maxStr] = range.split('-');
-            const min = parseFloat(minStr);
-            const max = parseFloat(maxStr);
+            const min = parseFloat(minStr || '');
+            const max = parseFloat(maxStr || '');
 
             if (isNaN(min) || min < 0) {
                 throw new Error(`Invalid minimum value in tier "${tierDef}": ${minStr}`);

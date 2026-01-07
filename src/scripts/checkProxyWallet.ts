@@ -113,14 +113,18 @@ const checkProxyWallet = async () => {
         // Check if trades contain proxyWallet field
         if (eoaActivities && eoaActivities.length > 0) {
             const sampleTrade = eoaActivities[0];
-            console.log(`   EOA trades contain proxyWallet: ${sampleTrade.proxyWallet || 'N/A'}`);
+            if (sampleTrade) {
+                console.log(`   EOA trades contain proxyWallet: ${sampleTrade.proxyWallet || 'N/A'}`);
+            }
         }
 
         if (proxyActivities && proxyActivities.length > 0) {
             const sampleTrade = proxyActivities[0];
-            console.log(
-                `   Proxy trades contain proxyWallet: ${sampleTrade.proxyWallet || 'N/A'}`
-            );
+            if (sampleTrade) {
+                console.log(
+                    `   Proxy trades contain proxyWallet: ${sampleTrade.proxyWallet || 'N/A'}`
+                );
+            }
         }
 
         console.log('\n   💡 HOW IT WORKS:\n');

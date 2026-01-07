@@ -93,7 +93,7 @@ const init = async (): Promise<void> => {
         const positions = await UserPosition.find().exec();
         positionCounts.push(positions.length);
 
-        const stats = calculatePositionStats(positions);
+        const stats = calculatePositionStats(positions.map(p => p.toObject()) as any);
         profitabilities.push(stats.overallPnl);
 
         // Get top 3 positions by profitability (PnL)

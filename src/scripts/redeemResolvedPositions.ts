@@ -214,7 +214,12 @@ const main = async () => {
         });
 
         // Redeem once for this condition (redeems all positions)
-        const result = await redeemPosition(ctfContract, positions[0]);
+        const firstPosition = positions[0];
+        if (!firstPosition) {
+            console.log('   ⚠️ No position found, skipping...');
+            continue;
+        }
+        const result = await redeemPosition(ctfContract, firstPosition);
 
         if (result.success) {
             successCount++;

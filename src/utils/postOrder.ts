@@ -61,8 +61,13 @@ const postOrder = async (
             }
 
             const maxPriceBid = orderBook.bids.reduce((max, bid) => {
-                return parseFloat(bid.price) > parseFloat(max.price) ? bid : max;
+                return parseFloat(bid.price) > parseFloat(max?.price ?? '0') ? bid : max;
             }, orderBook.bids[0]);
+
+            if (!maxPriceBid) {
+                Logger.error('No bids available in order book');
+                break;
+            }
 
             Logger.info(`Best bid: ${maxPriceBid.size} @ $${maxPriceBid.price}`);
             let order_arges;
@@ -93,6 +98,10 @@ const postOrder = async (
                 remaining -= order_arges.amount;
             } else {
                 const errorMessage = extractErrorMessage(resp);
+
+                // Log full response for debugging
+                Logger.warning(`Full API Response: ${JSON.stringify(resp, null, 2)}`);
+
                 if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
                     abortDueToFunds = true;
                     Logger.warning(
@@ -167,8 +176,13 @@ const postOrder = async (
             }
 
             const minPriceAsk = orderBook.asks.reduce((min, ask) => {
-                return parseFloat(ask.price) < parseFloat(min.price) ? ask : min;
+                return parseFloat(ask.price) < parseFloat(min?.price ?? '999999') ? ask : min;
             }, orderBook.asks[0]);
+
+            if (!minPriceAsk) {
+                Logger.error('No asks available in order book');
+                break;
+            }
 
             Logger.info(`Best ask: ${minPriceAsk.size} @ $${minPriceAsk.price}`);
             if (parseFloat(minPriceAsk.price) - 0.05 > trade.price) {
@@ -216,6 +230,10 @@ const postOrder = async (
                 remaining -= order_arges.amount;
             } else {
                 const errorMessage = extractErrorMessage(resp);
+
+                // Log full response for debugging
+                Logger.warning(`Full API Response: ${JSON.stringify(resp, null, 2)}`);
+
                 if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
                     abortDueToFunds = true;
                     Logger.warning(
@@ -362,8 +380,13 @@ const postOrder = async (
             }
 
             const maxPriceBid = orderBook.bids.reduce((max, bid) => {
-                return parseFloat(bid.price) > parseFloat(max.price) ? bid : max;
+                return parseFloat(bid.price) > parseFloat(max?.price ?? '0') ? bid : max;
             }, orderBook.bids[0]);
+
+            if (!maxPriceBid) {
+                Logger.error('No bids available in order book');
+                break;
+            }
 
             Logger.info(`Best bid: ${maxPriceBid.size} @ $${maxPriceBid.price}`);
 
@@ -406,6 +429,10 @@ const postOrder = async (
                 remaining -= order_arges.amount;
             } else {
                 const errorMessage = extractErrorMessage(resp);
+
+                // Log full response for debugging
+                Logger.warning(`Full API Response: ${JSON.stringify(resp, null, 2)}`);
+
                 if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
                     abortDueToFunds = true;
                     Logger.warning(
