@@ -108,23 +108,52 @@ The bot has been shut down.
         price: number;
         traderAddress: string;
         success: boolean;
+        reason?: string;
+        retryAttempts?: number;
+        traderAmount?: number;
+        yourBalance?: number;
+        transactionHash?: string;
     }): Promise<void> {
         const emoji = trade.side === 'BUY' ? '🟢' : '🔴';
-        const status = trade.success ? '✅' : '❌';
+        const status = trade.success ? '✅ SUCCESS' : '❌ FAILED';
 
-        const message = `
+        let message = `
 ${emoji} <b>${trade.side} Order ${status}</b>
 
-Market: <code>${trade.market.substring(0, 50)}</code>
-Side: <b>${trade.side}</b>
-Amount: <b>$${trade.amount.toFixed(2)}</b>
-Price: <b>$${trade.price.toFixed(3)}</b>
+<b>Market:</b> ${trade.market.substring(0, 60)}
+<b>Side:</b> ${trade.side}
+<b>Your Amount:</b> $${trade.amount.toFixed(2)}
+<b>Price:</b> $${trade.price.toFixed(3)}`;
 
-Copied from: <code>${trade.traderAddress.substring(0, 10)}...</code>
-Time: ${new Date().toISOString().replace('T', ' ').substring(0, 19)}
-        `.trim();
+        // Add trader's original amount if available
+        if (trade.traderAmount) {
+            message += `\n<b>Trader Amount:</b> $${trade.traderAmount.toFixed(2)}`;
+        }
 
-        await this.sendMessage(message);
+        // Add your balance
+        if (trade.yourBalance) {
+            message += `\n<b>Your Balance:</b> $${trade.yourBalance.toFixed(2)}`;
+        }
+
+        // Add failure reason if failed
+        if (!trade.success && trade.reason) {
+            message += `\n\n<b>❌ Reason:</b> ${trade.reason}`;
+        }
+
+        // Add retry information
+        if (trade.retryAttempts && trade.retryAttempts > 0) {
+            message += `\n<b>Attempts:</b> ${trade.retryAttempts}`;
+        }
+
+        // Add transaction hash if successful
+        if (trade.success && trade.transactionHash) {
+            message += `\n\n<b>TX:</b> <code>${trade.transactionHash}</code>`;
+        }
+
+        message += `\n\n<b>Trader:</b> <code>${trade.traderAddress.substring(0, 10)}...</code>
+<b>Time:</b> ${new Date().toISOString().replace('T', ' ').substring(0, 19)}`;
+
+        await this.sendMessage(message.trim());
     }
 
     /**

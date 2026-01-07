@@ -99,12 +99,15 @@ const postOrder = async (
 
                 // Send Telegram notification for successful SELL trade (initial position close)
                 TelegramNotifier.notifyTrade({
-                    market: trade.slug || 'Unknown Market',
+                    market: trade.slug || trade.title || 'Unknown Market',
                     side: 'SELL',
                     amount: order_arges.amount * order_arges.price, // Convert tokens to USD
                     price: order_arges.price,
                     traderAddress: userAddress,
                     success: true,
+                    traderAmount: trade.usdcSize,
+                    yourBalance: my_balance,
+                    transactionHash: resp.transactionHash,
                 }).catch((err) => {
                     const errorMsg = err instanceof Error ? err.message : String(err);
                     Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
@@ -136,24 +139,19 @@ const postOrder = async (
         if (abortDueToFunds) {
             // Send Telegram notification for failed SELL trade (insufficient funds)
             TelegramNotifier.notifyTrade({
-                market: trade.slug || 'Unknown Market',
+                market: trade.slug || trade.title || 'Unknown Market',
                 side: 'SELL',
                 amount: my_position.size * trade.price,
                 price: trade.price,
                 traderAddress: userAddress,
                 success: false,
+                reason: 'Insufficient tokens in your position',
+                retryAttempts: retry,
+                traderAmount: trade.usdcSize,
+                yourBalance: my_balance,
             }).catch((err) => {
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
-            });
-
-            TelegramNotifier.notifyError({
-                title: 'SELL Order Failed - Insufficient Balance',
-                message: 'Not enough tokens or allowance to execute sell',
-                severity: 'high',
-            }).catch((err) => {
-                const errorMsg = err instanceof Error ? err.message : String(err);
-                Logger.error(`Failed to send Telegram error notification: ${errorMsg}`);
             });
 
             await UserActivity.updateOne(
@@ -165,24 +163,19 @@ const postOrder = async (
         if (retry >= RETRY_LIMIT) {
             // Send notification for SELL order that failed after all retries
             TelegramNotifier.notifyTrade({
-                market: trade.slug || 'Unknown Market',
+                market: trade.slug || trade.title || 'Unknown Market',
                 side: 'SELL',
                 amount: my_position.size * trade.price,
                 price: trade.price,
                 traderAddress: userAddress,
                 success: false,
+                reason: `Failed after ${RETRY_LIMIT} attempts - Price slippage or order book issues`,
+                retryAttempts: RETRY_LIMIT,
+                traderAmount: trade.usdcSize,
+                yourBalance: my_balance,
             }).catch((err) => {
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
-            });
-
-            TelegramNotifier.notifyError({
-                title: 'SELL Order Failed After Retries',
-                message: `Order failed after ${RETRY_LIMIT} attempts`,
-                severity: 'medium',
-            }).catch((err) => {
-                const errorMsg = err instanceof Error ? err.message : String(err);
-                Logger.error(`Failed to send Telegram error notification: ${errorMsg}`);
             });
 
             await UserActivity.updateOne({ _id: trade._id }, { bot: true, botExcutedTime: retry });
@@ -289,12 +282,15 @@ const postOrder = async (
 
                 // Send Telegram notification for successful trade
                 TelegramNotifier.notifyTrade({
-                    market: trade.slug || 'Unknown Market',
+                    market: trade.slug || trade.title || 'Unknown Market',
                     side: 'BUY',
                     amount: order_arges.amount,
                     price: order_arges.price,
                     traderAddress: userAddress,
                     success: true,
+                    traderAmount: trade.usdcSize,
+                    yourBalance: my_balance,
+                    transactionHash: resp.transactionHash,
                 }).catch((err) => {
                     const errorMsg = err instanceof Error ? err.message : String(err);
                     Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
@@ -326,24 +322,19 @@ const postOrder = async (
         if (abortDueToFunds) {
             // Send Telegram notification for failed trade (insufficient funds)
             TelegramNotifier.notifyTrade({
-                market: trade.slug || 'Unknown Market',
+                market: trade.slug || trade.title || 'Unknown Market',
                 side: 'BUY',
                 amount: orderCalc.finalAmount,
                 price: trade.price,
                 traderAddress: userAddress,
                 success: false,
+                reason: 'Insufficient balance or USDC allowance',
+                retryAttempts: retry,
+                traderAmount: trade.usdcSize,
+                yourBalance: my_balance,
             }).catch((err) => {
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
-            });
-
-            TelegramNotifier.notifyError({
-                title: 'BUY Order Failed - Insufficient Funds',
-                message: 'Not enough balance or allowance to execute trade',
-                severity: 'high',
-            }).catch((err) => {
-                const errorMsg = err instanceof Error ? err.message : String(err);
-                Logger.error(`Failed to send Telegram error notification: ${errorMsg}`);
             });
 
             await UserActivity.updateOne(
@@ -355,24 +346,19 @@ const postOrder = async (
         if (retry >= RETRY_LIMIT) {
             // Send notification for order that failed after all retries
             TelegramNotifier.notifyTrade({
-                market: trade.slug || 'Unknown Market',
+                market: trade.slug || trade.title || 'Unknown Market',
                 side: 'BUY',
                 amount: orderCalc.finalAmount,
                 price: trade.price,
                 traderAddress: userAddress,
                 success: false,
+                reason: `Failed after ${RETRY_LIMIT} attempts - Price slippage or order book issues`,
+                retryAttempts: RETRY_LIMIT,
+                traderAmount: trade.usdcSize,
+                yourBalance: my_balance,
             }).catch((err) => {
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
-            });
-
-            TelegramNotifier.notifyError({
-                title: 'BUY Order Failed After Retries',
-                message: `Order failed after ${RETRY_LIMIT} attempts`,
-                severity: 'medium',
-            }).catch((err) => {
-                const errorMsg = err instanceof Error ? err.message : String(err);
-                Logger.error(`Failed to send Telegram error notification: ${errorMsg}`);
             });
 
             await UserActivity.updateOne(
@@ -546,12 +532,15 @@ const postOrder = async (
 
                 // Send Telegram notification for successful SELL trade
                 TelegramNotifier.notifyTrade({
-                    market: trade.slug || 'Unknown Market',
+                    market: trade.slug || trade.title || 'Unknown Market',
                     side: 'SELL',
                     amount: order_arges.amount * order_arges.price, // Convert tokens to USD
                     price: order_arges.price,
                     traderAddress: userAddress,
                     success: true,
+                    traderAmount: trade.usdcSize,
+                    yourBalance: my_balance,
+                    transactionHash: resp.transactionHash,
                 }).catch((err) => {
                     const errorMsg = err instanceof Error ? err.message : String(err);
                     Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
@@ -647,24 +636,19 @@ const postOrder = async (
         if (retry >= RETRY_LIMIT) {
             // Send notification for SELL order that failed after all retries
             TelegramNotifier.notifyTrade({
-                market: trade.slug || 'Unknown Market',
+                market: trade.slug || trade.title || 'Unknown Market',
                 side: 'SELL',
                 amount: my_position.size * trade.price,
                 price: trade.price,
                 traderAddress: userAddress,
                 success: false,
+                reason: `Failed after ${RETRY_LIMIT} attempts - Price slippage or order book issues`,
+                retryAttempts: RETRY_LIMIT,
+                traderAmount: trade.usdcSize,
+                yourBalance: my_balance,
             }).catch((err) => {
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
-            });
-
-            TelegramNotifier.notifyError({
-                title: 'SELL Order Failed After Retries',
-                message: `Order failed after ${RETRY_LIMIT} attempts`,
-                severity: 'medium',
-            }).catch((err) => {
-                const errorMsg = err instanceof Error ? err.message : String(err);
-                Logger.error(`Failed to send Telegram error notification: ${errorMsg}`);
             });
 
             await UserActivity.updateOne({ _id: trade._id }, { bot: true, botExcutedTime: retry });
