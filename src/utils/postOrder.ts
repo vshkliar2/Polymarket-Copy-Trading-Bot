@@ -9,6 +9,7 @@ import {
     isInsufficientBalanceOrAllowanceError,
 } from './errorHelpers';
 import TelegramNotifier from '../services/telegramNotifier';
+import { checkMarketPositionLimit, checkMarketEndDate } from './portfolioManager';
 
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 const COPY_STRATEGY_CONFIG = ENV.COPY_STRATEGY_CONFIG;
@@ -211,6 +212,57 @@ const postOrder = async (
             }
             await UserActivity.updateOne({ _id: trade._id }, { bot: true });
             return;
+        }
+
+        // Check Market end date filter
+        const endDateCheck = checkMarketEndDate(trade.endDate);
+        if (!endDateCheck.allowed) {
+            Logger.warning(`⏰ ${endDateCheck.reason}`);
+            await TelegramNotifier.notify(
+                `⏰ <b>Trade Skipped - End Date</b>\n\n` +
+                    `Market: ${trade.slug || trade.title}\n` +
+                    `Trader: ${userAddress.substring(0, 10)}...\n` +
+                    `Reason: ${endDateCheck.reason}`
+            );
+            await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+            return;
+        }
+
+        if (endDateCheck.daysUntilEnd) {
+            Logger.info(`⏰ Market ends in ${endDateCheck.daysUntilEnd.toFixed(1)} days`);
+        }
+
+        // Check Per-market position limit
+        const positionLimitCheck = checkMarketPositionLimit(
+            orderCalc.finalAmount,
+            my_balance,
+            my_position
+        );
+
+        if (!positionLimitCheck.allowed) {
+            Logger.warning(`💰 ${positionLimitCheck.reason}`);
+            await TelegramNotifier.notify(
+                `💰 <b>Trade Skipped - Position Limit</b>\n\n` +
+                    `Market: ${trade.slug || trade.title}\n` +
+                    `Trader: ${userAddress.substring(0, 10)}...\n` +
+                    `Trader Amount: $${trade.usdcSize.toFixed(2)}\n` +
+                    `Reason: ${positionLimitCheck.reason}`
+            );
+            await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+            return;
+        }
+
+        // Adjust order size if scaled down by position limit
+        if (positionLimitCheck.adjustedAmount < orderCalc.finalAmount) {
+            Logger.info(`💰 ${positionLimitCheck.reason}`);
+            await TelegramNotifier.notify(
+                `💰 <b>Order Size Adjusted</b>\n\n` +
+                    `Market: ${trade.slug || trade.title}\n` +
+                    `Original: $${orderCalc.finalAmount.toFixed(2)}\n` +
+                    `Adjusted: $${positionLimitCheck.adjustedAmount.toFixed(2)}\n` +
+                    `Reason: ${positionLimitCheck.reason}`
+            );
+            orderCalc.finalAmount = positionLimitCheck.adjustedAmount;
         }
 
         let remaining = orderCalc.finalAmount;

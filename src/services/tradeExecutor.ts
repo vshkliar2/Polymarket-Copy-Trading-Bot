@@ -168,7 +168,7 @@ const prepareTradeData = async (trade: TradeWithUser) => {
     return {
         myPosition,
         userPosition,
-        myBalance: myData.totalBalance,
+        myBalance: myData.usdcBalance, // Use USDC balance only (available for trading)
         userBalance: userData.balance,
     };
 };

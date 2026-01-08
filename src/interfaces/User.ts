@@ -26,6 +26,7 @@ export interface UserActivityInterface {
     bot: boolean;
     botExcutedTime: number;
     myBoughtSize?: number; // Tracks actual tokens we bought
+    endDate?: string; // Market end date (ISO string or timestamp)
 }
 
 export interface UserPositionInterface {

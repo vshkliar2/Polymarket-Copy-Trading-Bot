@@ -352,4 +352,18 @@ export const ENV = {
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
     TELEGRAM_ALERTS_ENABLED: process.env.TELEGRAM_ALERTS_ENABLED === 'true',
+    HEALTH_CHECK_INTERVAL_HOURS: parseInt(process.env.HEALTH_CHECK_INTERVAL_HOURS || '6', 10),
+    // Portfolio management
+    MAX_POSITION_PER_MARKET_USD: process.env.MAX_POSITION_PER_MARKET_USD
+        ? parseFloat(process.env.MAX_POSITION_PER_MARKET_USD)
+        : undefined,
+    MAX_POSITION_PER_MARKET_PERCENT: process.env.MAX_POSITION_PER_MARKET_PERCENT
+        ? parseFloat(process.env.MAX_POSITION_PER_MARKET_PERCENT)
+        : undefined,
+    MAX_MARKET_DURATION_DAYS: process.env.MAX_MARKET_DURATION_DAYS
+        ? parseInt(process.env.MAX_MARKET_DURATION_DAYS, 10)
+        : undefined,
+    MIN_MARKET_DURATION_DAYS: process.env.MIN_MARKET_DURATION_DAYS
+        ? parseInt(process.env.MIN_MARKET_DURATION_DAYS, 10)
+        : 1,
 };
