@@ -66,15 +66,17 @@ const calculatePnL = async (): Promise<void> => {
         // Fetch all data
         console.log('📊 Fetching data from Polymarket API...\n');
 
-        const [positions, activities, usdcBalance] = await Promise.all([
+        const [openPositionsData, closedPositionsData, activities, usdcBalance] = await Promise.all([
             fetchData(`https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`) as Promise<Position[]>,
+            fetchData(`https://data-api.polymarket.com/closed-positions?user=${PROXY_WALLET}`) as Promise<Position[]>,
             fetchData(`https://data-api.polymarket.com/activity?user=${PROXY_WALLET}&type=TRADE`) as Promise<Activity[]>,
             getMyBalance(PROXY_WALLET),
         ]);
 
-        // Separate open and closed positions
-        const openPositions = positions.filter((p) => p.size > 0);
-        const closedPositions = positions.filter((p) => p.size === 0);
+        // Use the data directly - API already separates them
+        const openPositions = Array.isArray(openPositionsData) ? openPositionsData : [];
+        const closedPositions = Array.isArray(closedPositionsData) ? closedPositionsData : [];
+        const positions = [...openPositions, ...closedPositions];
 
         // Calculate unrealized P&L from open positions
         let unrealizedPnl = 0;
