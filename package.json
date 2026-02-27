@@ -38,6 +38,7 @@
         "compare": "ts-node src/scripts/compareResults.ts",
         "check-stats": "ts-node src/scripts/checkMyStats.ts",
         "check-pnl": "ts-node src/scripts/checkPnLDiscrepancy.ts",
+        "calculate-pnl": "ts-node src/scripts/calculatePnL.ts",
         "check-proxy": "ts-node src/scripts/checkProxyWallet.ts",
         "check-both": "ts-node src/scripts/checkBothWallets.ts",
         "close-stale": "ts-node src/scripts/closeStalePositions.ts",
