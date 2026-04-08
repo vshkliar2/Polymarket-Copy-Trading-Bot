@@ -203,10 +203,10 @@ const displayOpenPositionsBreakdown = (positions: Position[]): void => {
         const pnlIcon = (pos.percentPnl || 0) >= 0 ? '📈' : '📉';
         console.log(`${idx + 1}. ${pnlIcon} ${pos.title || 'Unknown Market'}`);
         console.log(`   Outcome: ${pos.outcome || 'N/A'}`);
-        console.log(`   Size: ${pos.size.toFixed(2)} tokens @ avg $${pos.avgPrice.toFixed(3)}`);
-        console.log(`   Current Price: $${pos.curPrice.toFixed(3)}`);
-        console.log(`   Initial Value: $${pos.initialValue.toFixed(2)}`);
-        console.log(`   Current Value: $${pos.currentValue.toFixed(2)}`);
+        console.log(`   Size: ${(pos.size || 0).toFixed(2)} tokens @ avg $${(pos.avgPrice || 0).toFixed(3)}`);
+        console.log(`   Current Price: $${(pos.curPrice || 0).toFixed(3)}`);
+        console.log(`   Initial Value: $${(pos.initialValue || 0).toFixed(2)}`);
+        console.log(`   Current Value: $${(pos.currentValue || 0).toFixed(2)}`);
         console.log(`   P&L: $${(pos.cashPnl || 0).toFixed(2)} (${(pos.percentPnl || 0).toFixed(2)}%)`);
         if (pos.realizedPnl && Math.abs(pos.realizedPnl) > 0.01) {
             console.log(`   Realized P&L: $${pos.realizedPnl.toFixed(2)}`);
@@ -244,7 +244,7 @@ const displayClosedPositionsBreakdown = (positions: Position[]): void => {
         const pnlIcon = (pos.realizedPnl || 0) >= 0 ? '✅' : '❌';
         console.log(`${idx + 1}. ${pnlIcon} ${pos.title || 'Unknown Market'}`);
         console.log(`   Outcome: ${pos.outcome || 'N/A'}`);
-        console.log(`   Initial Value: $${pos.initialValue.toFixed(2)}`);
+        console.log(`   Initial Value: $${(pos.initialValue || 0).toFixed(2)}`);
         console.log(`   Realized P&L: $${(pos.realizedPnl || 0).toFixed(2)} (${(pos.percentRealizedPnl || 0).toFixed(2)}%)`);
         if (pos.redeemable) {
             console.log(`   ⚠️  Redeemable - run 'npm run redeem-resolved' to claim winnings`);
@@ -274,14 +274,16 @@ const displayTradingActivity = (activities: Activity[]): void => {
     const recentTrades = activities.slice(0, 10);
 
     recentTrades.forEach((trade, idx) => {
-        const date = new Date(trade.timestamp * 1000);
+        const date = new Date((trade.timestamp || 0) * 1000);
         const sideIcon = trade.side === 'BUY' ? '🟢' : '🔴';
         console.log(`${idx + 1}. ${sideIcon} ${trade.side} - ${date.toLocaleString('en-US')}`);
         console.log(`   ${trade.title || 'Unknown Market'}`);
         console.log(`   ${trade.outcome || 'N/A'}`);
-        console.log(`   Volume: $${trade.usdcSize.toFixed(2)} @ $${trade.price.toFixed(3)}`);
-        console.log(`   TX: ${trade.transactionHash.slice(0, 10)}...${trade.transactionHash.slice(-8)}`);
-        console.log(`   🔗 https://polygonscan.com/tx/${trade.transactionHash}`);
+        console.log(`   Volume: $${(trade.usdcSize || 0).toFixed(2)} @ $${(trade.price || 0).toFixed(3)}`);
+        if (trade.transactionHash) {
+            console.log(`   TX: ${trade.transactionHash.slice(0, 10)}...${trade.transactionHash.slice(-8)}`);
+            console.log(`   🔗 https://polygonscan.com/tx/${trade.transactionHash}`);
+        }
         console.log('');
     });
 };
