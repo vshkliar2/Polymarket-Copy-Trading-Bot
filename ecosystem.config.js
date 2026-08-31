@@ -1,0 +1,48 @@
+module.exports = {
+    apps: [
+        {
+            name: 'polymarket-bot',
+            script: './dist/index.js',
+
+            // Restart every day at 3 AM
+            cron_restart: '0 3 * * *',
+
+            // Auto restart on crash
+            autorestart: true,
+
+            // Maximum memory before restart (optional)
+            max_memory_restart: '500M',
+
+            // Watch for file changes in development (set to false in production)
+            watch: false,
+
+            // Environment variables (optional - uses .env by default)
+            env: {
+                NODE_ENV: 'production',
+            },
+
+            // Development environment
+            env_development: {
+                NODE_ENV: 'development',
+            },
+
+            // Logging
+            error_file: './logs/error.log',
+            out_file: './logs/out.log',
+            log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+
+            // Combine logs from all instances
+            merge_logs: true,
+
+            // Time to wait before force killing app on restart
+            kill_timeout: 5000,
+
+            // Time to wait before considering app as online
+            listen_timeout: 10000,
+
+            // Number of times to retry start if app crashes immediately
+            max_restarts: 10,
+            min_uptime: '10s',
+        },
+    ],
+};

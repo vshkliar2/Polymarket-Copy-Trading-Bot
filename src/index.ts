@@ -6,6 +6,7 @@ import tradeMonitor, { stopTradeMonitor } from './services/tradeMonitor';
 import Logger from './utils/logger';
 import { performHealthCheck, logHealthCheck } from './utils/healthCheck';
 import TelegramNotifier from './services/telegramNotifier';
+import HealthMonitor from './services/healthMonitor';
 
 const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const PROXY_WALLET = ENV.PROXY_WALLET;
@@ -38,6 +39,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
         // Stop services
         stopTradeMonitor();
         stopTradeExecutor();
+        HealthMonitor.stop();
 
         // Give services time to finish current operations
         Logger.info('Waiting for services to finish current operations...');
@@ -114,11 +116,11 @@ export const main = async (): Promise<void> => {
             yellow: '\x1b[33m',
             cyan: '\x1b[36m',
         };
-        
+
         console.log(`\n${colors.yellow}💡 First time running the bot?${colors.reset}`);
         console.log(`   Read the guide: ${colors.cyan}GETTING_STARTED.md${colors.reset}`);
         console.log(`   Run health check: ${colors.cyan}npm run health-check${colors.reset}\n`);
-        
+
         await connectDB();
         Logger.startup(USER_ADDRESSES, PROXY_WALLET);
 
@@ -141,6 +143,11 @@ export const main = async (): Promise<void> => {
 
         Logger.info('Starting trade executor...');
         tradeExecutor(clobClient);
+
+        // Start health monitoring
+        const healthInterval = ENV.HEALTH_CHECK_INTERVAL_HOURS;
+        Logger.info(`Starting health monitor (checking every ${healthInterval} hours)...`);
+        HealthMonitor.start(healthInterval);
 
         // Send startup notification
         await TelegramNotifier.notifyStartup();

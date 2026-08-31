@@ -312,9 +312,100 @@ npm run check-allowance
 NODE_OPTIONS="--max-old-space-size=2048" node dist/index.js
 ```
 
+## Auto-Deploy Setup (Recommended for PM2)
+
+Set up automatic deployment that pulls changes from GitHub and restarts the bot when updates are detected.
+
+### Step 1: Copy Auto-Deploy Script
+
+```bash
+# Copy script to home directory
+cp scripts/auto-deploy.sh ~/auto-deploy.sh
+chmod +x ~/auto-deploy.sh
+```
+
+### Step 2: Test Script
+
+```bash
+# Test manually
+~/auto-deploy.sh
+
+# Should show:
+# No changes detected. Bot is up to date.
+```
+
+### Step 3: Set Up Cron Job
+
+```bash
+crontab -e
+```
+
+Add this line to run every 5 minutes:
+
+```bash
+*/5 * * * * /home/ubuntu/auto-deploy.sh >> /home/ubuntu/deploy.log 2>&1
+```
+
+**Schedule options:**
+- `*/1 * * * *` - Every 1 minute (aggressive)
+- `*/5 * * * *` - Every 5 minutes (recommended)
+- `*/15 * * * *` - Every 15 minutes (conservative)
+
+### Step 4: Verify Setup
+
+```bash
+# Check cron job
+crontab -l
+
+# Wait 5 minutes or trigger manually
+~/auto-deploy.sh
+
+# View deployment log
+tail -f ~/deploy.log
+```
+
+### Auto-Deploy Features
+
+The script automatically:
+- ✅ Detects changes from GitHub
+- ✅ Pulls latest code
+- ✅ Only rebuilds if `package.json` changed
+- ✅ Restarts bot only when changes detected
+- ✅ Preserves `.env` file (uses git stash)
+- ✅ Logs all deployment activity
+
+### Monitor Deployments
+
+```bash
+# View real-time deployment log
+tail -f ~/deploy.log
+
+# View last deployment
+tail -n 50 ~/deploy.log
+
+# Check bot status after deploy
+pm2 status
+pm2 logs polymarket-bot --lines 20
+```
+
+### Workflow with Auto-Deploy
+
+```bash
+# 1. On local machine: make changes
+git add .
+git commit -m "your changes"
+git push origin main
+
+# 2. On server: changes auto-deploy within 5 minutes
+# No manual intervention needed!
+
+# 3. Monitor deployment
+ssh your-server "tail -f ~/deploy.log"
+```
+
 ## Updates and Maintenance
 
-### Updating the Bot
+### Manual Updates (Without Auto-Deploy)
 
 1. **Pull latest changes:**
 
@@ -340,6 +431,24 @@ sudo systemctl restart polymarket-bot
 
 # PM2
 pm2 restart polymarket-bot
+```
+
+### Updating from Upstream (If Forked)
+
+If you forked the repository and want to pull updates from the original:
+
+```bash
+# Add upstream remote (one-time)
+git remote add upstream https://github.com/earthskyorg/polymarket-copy-trading-bot.git
+
+# Fetch and merge updates
+git fetch upstream
+git merge upstream/main
+
+# Push to your fork
+git push origin main
+
+# Auto-deploy will handle deployment (if set up)
 ```
 
 ### Zero-Downtime Updates

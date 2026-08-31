@@ -91,10 +91,13 @@ export const checkMarketPositionLimit = (
     }
 
     // Scale down to fit within limit
+    // Apply 2% safety buffer to account for price slippage and fees
+    const safeAmount = remainingBudget * 0.98;
+
     return {
         allowed: true,
-        adjustedAmount: remainingBudget,
-        reason: `Scaled down from $${proposedAmount.toFixed(2)} to $${remainingBudget.toFixed(2)} (market limit: $${actualLimit.toFixed(2)})`,
+        adjustedAmount: safeAmount,
+        reason: `Scaled down from $${proposedAmount.toFixed(2)} to $${safeAmount.toFixed(2)} (market limit: $${actualLimit.toFixed(2)}, with 2% buffer)`,
     };
 };
 
@@ -113,7 +116,7 @@ export const checkMarketEndDate = (
         return { allowed: true };
     }
 
-    // Parse end date
+    // Parse end datei
     let endTimestamp: number;
     if (typeof endDate === 'string') {
         endTimestamp = new Date(endDate).getTime();

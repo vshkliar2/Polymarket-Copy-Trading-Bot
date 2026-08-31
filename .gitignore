@@ -23,6 +23,8 @@ out/
 .env.local
 .env.*.local
 .env.production
+.env.backup
+.env.*.backup
 
 # Temporary files
 *.tmp
