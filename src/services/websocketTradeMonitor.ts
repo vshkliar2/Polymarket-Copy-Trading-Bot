@@ -1,7 +1,8 @@
+import { RealTimeDataClient, Message, ConnectionStatus } from '@polymarket/real-time-data-client';
 import { ENV } from '../config/env';
 import { getUserActivityModel, getUserPositionModel } from '../models/userHistory';
 import Logger from '../utils/logger';
-import PolymarketWebSocketClient from '../utils/websocketClient';
+import TelegramNotifier from './telegramNotifier';
 import {
     calculatePositionStats,
     fetchMyPositionsAndBalance,
@@ -33,14 +34,24 @@ const userModels: UserModelConfig[] = USER_ADDRESSES.map((address) => ({
     UserPosition: getUserPositionModel(address),
 }));
 
-// WebSocket client instance
-let wsClient: PolymarketWebSocketClient | null = null;
+// Fast lookup: lowercase tracked address -> model config
+const trackedAddresses = new Map<string, UserModelConfig>(
+    userModels.map((m) => [m.address.toLowerCase(), m])
+);
 
-// Track if monitor is running
+// The activity/trades topic is a firehose of ALL Polymarket trades — there is
+// no working server-side per-wallet filter (documented market_slug/event_slug
+// filters are known-broken upstream), so every message is checked against
+// trackedAddresses and discarded immediately if it doesn't match.
+let client: RealTimeDataClient | null = null;
 let isRunning = false;
-
-// Store position update interval
 let positionUpdateInterval: NodeJS.Timeout | null = null;
+
+// Visibility counters, logged periodically so a live-but-quiet connection
+// is distinguishable from a stalled one.
+let totalMessagesSeen = 0;
+let matchedMessagesSeen = 0;
+let statsLogInterval: NodeJS.Timeout | null = null;
 
 /**
  * Format address for display (first 6 + last 4 characters)
@@ -69,7 +80,6 @@ const init = async (): Promise<void> => {
         if (myPositions.length > 0) {
             const stats = calculatePositionStats(myPositions);
 
-            // Get top 5 positions by profitability (PnL)
             const myTopPositions = myPositions
                 .sort((a, b) => (b.percentPnl ?? 0) - (a.percentPnl ?? 0))
                 .slice(0, 5)
@@ -100,7 +110,6 @@ const init = async (): Promise<void> => {
         Logger.error(`Failed to fetch your positions: ${formatError(error)}`);
     }
 
-    // Show current positions count with details for traders you're copying
     const positionCounts: number[] = [];
     const positionDetails: Array<Array<Record<string, unknown>>> = [];
     const profitabilities: number[] = [];
@@ -112,7 +121,6 @@ const init = async (): Promise<void> => {
         const stats = calculatePositionStats(positions.map((p) => p.toObject()) as any);
         profitabilities.push(stats.overallPnl);
 
-        // Get top 3 positions by profitability (PnL)
         const topPositions = positions
             .sort((a, b) => (b.percentPnl ?? 0) - (a.percentPnl ?? 0))
             .slice(0, 3)
@@ -132,35 +140,30 @@ const init = async (): Promise<void> => {
 };
 
 /**
- * Process and save a new trade activity
+ * Process and save a new trade activity (shared shape with polling mode's
+ * tradeMonitor.ts — same schema, same dedup-by-transactionHash behavior).
  */
 const processNewTrade = async (
     activity: Record<string, unknown>,
     address: string,
     UserActivity: UserModelConfig['UserActivity']
 ): Promise<void> => {
-    // Skip if too old
     const timestamp = typeof activity.timestamp === 'number' ? activity.timestamp : 0;
     if (timestamp < TOO_OLD_TIMESTAMP) {
         return;
     }
 
-    // Check if this trade already exists in database
     const transactionHash = String(activity.transactionHash ?? '');
-    const existingActivity = await UserActivity.findOne({
-        transactionHash,
-    }).exec();
-
+    const existingActivity = await UserActivity.findOne({ transactionHash }).exec();
     if (existingActivity) {
         return; // Already processed this trade
     }
 
-    // Save new trade to database
     const newActivity = new UserActivity({
         proxyWallet: String(activity.proxyWallet ?? ''),
         timestamp,
         conditionId: String(activity.conditionId ?? ''),
-        type: String(activity.type ?? ''),
+        type: String(activity.type ?? 'TRADE'),
         size: typeof activity.size === 'number' ? activity.size : 0,
         usdcSize: typeof activity.usdcSize === 'number' ? activity.usdcSize : 0,
         transactionHash,
@@ -187,7 +190,8 @@ const processNewTrade = async (
 };
 
 /**
- * Update positions for a trader
+ * Update positions for a trader (position/P&L data is not part of the trade
+ * stream, so this stays a periodic REST poll regardless of monitoring mode).
  */
 const updateTraderPositions = async (
     address: string,
@@ -197,7 +201,6 @@ const updateTraderPositions = async (
 
     if (positions.length > 0) {
         for (const position of positions) {
-            // Update or create position
             await UserPosition.findOneAndUpdate(
                 { asset: position.asset ?? '', conditionId: position.conditionId ?? '' },
                 {
@@ -234,75 +237,80 @@ const updateTraderPositions = async (
 };
 
 /**
- * Handle WebSocket trade message
+ * Fetch and process trade data for a single trader via REST.
+ * Used for the initial backfill and for reconnect catch-up.
  */
-const handleTradeMessage = async (message: any): Promise<void> => {
+const fetchTradeDataForTrader = async ({
+    address,
+    UserActivity,
+    UserPosition,
+}: UserModelConfig): Promise<void> => {
     try {
-        // Check if this is a trade message
-        if (message.event_type !== 'trade' && message.type !== 'trade') {
-            return;
-        }
-
-        // Extract trade data (format may vary, adjust based on actual API)
-        const tradeData = message.data || message;
-        const userAddress = (tradeData.maker || tradeData.user || '').toLowerCase();
-
-        // Check if this trade is from one of our monitored traders
-        const userModel = userModels.find((model) => model.address === userAddress);
-        if (!userModel) {
-            return; // Not a trader we're monitoring
-        }
-
-        Logger.info(`📨 WebSocket trade message received for ${formatAddress(userAddress)}`);
-
-        // Fetch full trade details from API
-        // (WebSocket might not include all fields we need)
-        const apiUrl = `https://data-api.polymarket.com/activity?user=${userAddress}&type=TRADE`;
+        const apiUrl = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE`;
         const activities = (await fetchData(apiUrl)) as Array<Record<string, unknown>>;
 
         if (!Array.isArray(activities) || activities.length === 0) {
             return;
         }
 
-        // Process the most recent trade(s)
-        const recentTrades = activities.slice(0, 5); // Check last 5 trades
-        for (const activity of recentTrades) {
-            await processNewTrade(activity, userAddress, userModel.UserActivity);
+        for (const activity of activities) {
+            await processNewTrade(activity, address, UserActivity);
         }
 
-        // Update positions for this trader
-        await updateTraderPositions(userAddress, userModel.UserPosition);
+        await updateTraderPositions(address, UserPosition);
     } catch (error) {
-        Logger.error(`Error handling WebSocket trade message: ${formatError(error)}`);
+        Logger.error(`Error fetching data for ${formatAddress(address)}: ${formatError(error)}`);
     }
 };
 
 /**
- * Fetch initial historical trades for all traders
+ * Handle a single trade message from the activity/trades firehose.
+ */
+const handleTradeMessage = async (message: Message): Promise<void> => {
+    if (message.topic !== 'activity' || message.type !== 'trades') {
+        return;
+    }
+
+    totalMessagesSeen++;
+
+    const trade = message.payload as Record<string, unknown>;
+    const proxyWallet = String(trade.proxyWallet ?? '').toLowerCase();
+    const userModel = trackedAddresses.get(proxyWallet);
+    if (!userModel) {
+        return; // Not one of our tracked traders — expected for the vast majority of messages
+    }
+
+    matchedMessagesSeen++;
+
+    try {
+        await processNewTrade(trade, userModel.address, userModel.UserActivity);
+        // Position/P&L changes with every trade; refresh it for this trader now
+        // rather than waiting for the periodic sweep.
+        await updateTraderPositions(userModel.address, userModel.UserPosition);
+    } catch (error) {
+        Logger.error(
+            `Error handling trade for ${formatAddress(userModel.address)}: ${formatError(error)}`
+        );
+    }
+};
+
+/**
+ * Fetch initial historical trades for all traders and mark them processed,
+ * matching polling mode's first-run behavior (don't replay history as new).
  */
 const fetchInitialTrades = async (): Promise<void> => {
     Logger.info('Fetching initial trade history...');
 
-    for (const { address, UserActivity, UserPosition } of userModels) {
-        try {
-            // Fetch trade activities from Polymarket API
-            const apiUrl = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE`;
-            const activities = (await fetchData(apiUrl)) as Array<Record<string, unknown>>;
+    await Promise.all(userModels.map(fetchTradeDataForTrader));
 
-            if (!Array.isArray(activities) || activities.length === 0) {
-                continue;
-            }
-
-            // Process each activity
-            for (const activity of activities) {
-                await processNewTrade(activity, address, UserActivity);
-            }
-
-            // Update positions
-            await updateTraderPositions(address, UserPosition);
-        } catch (error) {
-            Logger.error(
-                `Error fetching initial data for ${formatAddress(address)}: ${formatError(error)}`
+    for (const { address, UserActivity } of userModels) {
+        const count = await UserActivity.updateMany(
+            { bot: false },
+            { $set: { bot: true, botExcutedTime: 999 } }
+        );
+        if (count.modifiedCount > 0) {
+            Logger.info(
+                `Marked ${count.modifiedCount} historical trades as processed for ${formatAddress(address)}`
             );
         }
     }
@@ -311,23 +319,40 @@ const fetchInitialTrades = async (): Promise<void> => {
 };
 
 /**
- * Start periodic position updates
- * (WebSocket only notifies on trades, not position changes)
+ * Start periodic position updates (every 5 minutes) — a safety-net sweep on
+ * top of the per-trade refresh in handleTradeMessage, since positions also
+ * move with market price alone, independent of trades.
  */
 const startPositionUpdates = (): void => {
-    // Update positions every 5 minutes
     positionUpdateInterval = setInterval(
         async () => {
             try {
-                for (const { address, UserPosition } of userModels) {
-                    await updateTraderPositions(address, UserPosition);
-                }
+                await Promise.all(
+                    userModels.map(({ address, UserPosition }) =>
+                        updateTraderPositions(address, UserPosition)
+                    )
+                );
             } catch (error) {
                 Logger.error(`Error updating positions: ${formatError(error)}`);
             }
         },
         5 * 60 * 1000
-    ); // 5 minutes
+    );
+};
+
+/**
+ * Start periodic stats logging so a live-but-quiet connection is
+ * distinguishable from a stalled one.
+ */
+const startStatsLogging = (): void => {
+    statsLogInterval = setInterval(
+        () => {
+            Logger.info(
+                `📊 WebSocket firehose: ${totalMessagesSeen} trades seen, ${matchedMessagesSeen} matched your tracked wallets`
+            );
+        },
+        5 * 60 * 1000
+    );
 };
 
 /**
@@ -341,10 +366,13 @@ export const stopWebSocketTradeMonitor = (): void => {
         clearInterval(positionUpdateInterval);
         positionUpdateInterval = null;
     }
-
-    if (wsClient) {
-        wsClient.close();
-        wsClient = null;
+    if (statsLogInterval) {
+        clearInterval(statsLogInterval);
+        statsLogInterval = null;
+    }
+    if (client) {
+        client.disconnect();
+        client = null;
     }
 };
 
@@ -360,57 +388,63 @@ const websocketTradeMonitor = async (): Promise<void> => {
     isRunning = true;
 
     await init();
-    Logger.success(
-        `🚀 WebSocket monitoring ${USER_ADDRESSES.length} trader(s) in real-time`
-    );
+    Logger.success(`🚀 WebSocket monitoring ${USER_ADDRESSES.length} trader(s) in real-time`);
     Logger.separator();
 
-    // Fetch initial trade history
+    // Backfill/mark historical trades as processed BEFORE opening the
+    // subscription, so there's no gap between "process started" and
+    // "subscription live" where a trade could be missed entirely.
     await fetchInitialTrades();
-
-    // Mark all existing historical trades as processed
-    Logger.info('Marking historical trades as processed...');
-    for (const { address, UserActivity } of userModels) {
-        const count = await UserActivity.updateMany(
-            { bot: false },
-            { $set: { bot: true, botExcutedTime: 999 } }
-        );
-        if (count.modifiedCount > 0) {
-            Logger.info(
-                `Marked ${count.modifiedCount} historical trades as processed for ${formatAddress(address)}`
-            );
-        }
-    }
     Logger.success('Historical trades processed. Now monitoring for new trades only.\n');
     Logger.separator();
 
-    // Initialize WebSocket client
-    wsClient = new PolymarketWebSocketClient(ENV.CLOB_WS_URL);
+    let hasConnectedOnce = false;
 
-    // Register message handler
-    wsClient.onMessage(handleTradeMessage);
+    client = new RealTimeDataClient({
+        autoReconnect: true,
+        onConnect: (rtdc) => {
+            Logger.success('✅ Connected to Polymarket real-time data stream');
+            rtdc.subscribe({ subscriptions: [{ topic: 'activity', type: 'trades' }] });
+            Logger.success('✅ Subscribed to activity/trades firehose');
 
-    // Connect to WebSocket
+            if (hasConnectedOnce) {
+                // Reconnected after a drop — the firehose has no replay, so
+                // anything that happened during the gap is otherwise lost.
+                // Catch up via REST for all tracked traders.
+                Logger.warning('Reconnected after a disconnect — running catch-up fetch...');
+                Promise.all(userModels.map(fetchTradeDataForTrader)).catch((error) => {
+                    Logger.error(`Reconnect catch-up fetch failed: ${formatError(error)}`);
+                });
+            }
+            hasConnectedOnce = true;
+        },
+        onMessage: (_rtdc, message) => {
+            handleTradeMessage(message).catch((error) => {
+                Logger.error(`Error handling WebSocket message: ${formatError(error)}`);
+            });
+        },
+        onStatusChange: (status) => {
+            if (status === ConnectionStatus.DISCONNECTED) {
+                Logger.warning('⚠️  WebSocket disconnected — auto-reconnect in progress...');
+            }
+        },
+    });
+
     try {
-        await wsClient.connect();
-
-        // Subscribe to each trader's trades
-        // Note: The exact subscription format depends on Polymarket's WebSocket API
-        // This is a generic implementation that may need adjustment
-        for (const address of USER_ADDRESSES) {
-            Logger.info(`Subscribing to trades for ${formatAddress(address)}`);
-            wsClient.subscribe('user', { user: address });
-        }
-
-        Logger.success(`✅ Subscribed to ${USER_ADDRESSES.length} trader(s)`);
-        Logger.info('💡 Waiting for real-time trade notifications...\n');
+        client.connect();
     } catch (error) {
-        Logger.error(`Failed to connect to WebSocket: ${formatError(error)}`);
+        const errorMsg = formatError(error);
+        Logger.error(`Failed to connect to WebSocket: ${errorMsg}`);
+        await TelegramNotifier.notifyError({
+            title: 'WebSocket Connection Failed',
+            message: errorMsg,
+            severity: 'critical',
+        });
         throw error;
     }
 
-    // Start periodic position updates
     startPositionUpdates();
+    startStatsLogging();
 
     // Keep monitor running
     while (isRunning) {

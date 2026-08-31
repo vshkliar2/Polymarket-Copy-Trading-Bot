@@ -116,31 +116,45 @@ Total: 0.4 seconds delay
 
 ### WebSocket Architecture
 
+Uses Polymarket's official `@polymarket/real-time-data-client`, subscribed
+to the `activity`/`trades` topic. This topic has no working per-wallet
+server-side filter (the documented `market_slug`/`event_slug` filters are
+known-broken upstream), so it delivers **every trade on all of Polymarket**
+— the bot filters client-side by checking each trade's `proxyWallet`
+against your tracked addresses (a fast in-memory lookup) and discards
+everything else before it touches the database.
+
 **Components:**
-1. **PolymarketWebSocketClient** (`src/utils/websocketClient.ts`)
-   - Manages WebSocket connection
-   - Auto-reconnects on disconnect
-   - Handles ping/pong keep-alive
-   - Exponential backoff on errors
+1. **RealTimeDataClient** (from `@polymarket/real-time-data-client`)
+   - Manages the WebSocket connection, including reconnection and keep-alive
+   - No custom transport code needed — this replaced an earlier hand-rolled
+     client that subscribed to the wrong API entirely (the CLOB `user`
+     channel, which only streams your *own* authenticated account's orders,
+     not third-party wallets)
 
 2. **WebSocketTradeMonitor** (`src/services/websocketTradeMonitor.ts`)
-   - Subscribes to trader addresses
-   - Processes incoming trade messages
-   - Fetches full trade details from API
-   - Updates positions every 5 minutes
+   - Subscribes unfiltered to `activity`/`trades`
+   - Filters incoming trades by tracked `proxyWallet` addresses
+   - Reuses the same trade-processing and position-update logic as polling
+     mode, writing to the same MongoDB schema
+   - Runs a REST backfill on startup (so historical trades are marked
+     processed before the subscription opens) and again after any
+     reconnect (the firehose has no replay — trades during a disconnect
+     gap are otherwise lost)
+   - Logs periodic stats (total trades seen vs. matched) so a live-but-quiet
+     connection is distinguishable from a stalled one
 
 ### Connection Management
 
-**Auto-Reconnection:**
-- Reconnects automatically on disconnect
-- Exponential backoff: 1s, 2s, 4s, 8s, up to 60s
-- Max 10 reconnection attempts
-- Logs all connection events
+**Auto-Reconnection:** handled entirely by `RealTimeDataClient`
+(`autoReconnect: true`) — no custom backoff logic in this codebase.
 
-**Keep-Alive:**
-- Sends ping every 30 seconds
-- Detects stale connections
-- Reconnects if no response
+**Reconnect Gap:** trades that occur while disconnected are not replayed by
+the firehose. On reconnect, the monitor runs one REST catch-up fetch per
+tracked trader to close that gap.
+
+**On repeated connection failure:** the bot logs a critical error, sends a
+Telegram alert, and exits — it does not silently fall back to polling.
 
 ---
 
@@ -181,19 +195,13 @@ New trade detected for 0x7c3d...5c6b
 
 ### WebSocket Won't Connect
 
-**Check 1: WebSocket URL**
+**Check 1: Network/Firewall**
 ```bash
-# In .env file, verify:
-CLOB_WS_URL='wss://ws-subscriptions-clob.polymarket.com/ws'
+# Test WebSocket connectivity (real-time-data-client's default host):
+node -e "const WebSocket = require('ws'); const ws = new WebSocket('wss://ws-live-data.polymarket.com'); ws.on('open', () => { console.log('✓ Connected'); ws.close(); }); ws.on('error', (e) => console.error('✗ Error:', e.message));"
 ```
 
-**Check 2: Network/Firewall**
-```bash
-# Test WebSocket connectivity:
-node -e "const WebSocket = require('ws'); const ws = new WebSocket('wss://ws-subscriptions-clob.polymarket.com/ws'); ws.on('open', () => { console.log('✓ Connected'); ws.close(); }); ws.on('error', (e) => console.error('✗ Error:', e.message));"
-```
-
-**Check 3: Logs**
+**Check 2: Logs**
 ```bash
 # Look for connection errors:
 pm2 logs polymarket-bot | grep -i websocket
@@ -354,34 +362,16 @@ pm2 restart polymarket-bot
 ```bash
 # Required for both modes:
 CLOB_HTTP_URL='https://clob.polymarket.com/'
-CLOB_WS_URL='wss://ws-subscriptions-clob.polymarket.com/ws'
 
 # Polling mode specific:
 FETCH_INTERVAL=1  # Polling frequency in seconds
 
 # WebSocket mode specific:
-# (No additional config needed - auto-reconnect built-in)
+# (No additional config needed - reconnection is built into
+# @polymarket/real-time-data-client and connects to its default host)
 
 # Mode selector:
 USE_WEBSOCKET='true'  # or 'false'
-```
-
-### Custom WebSocket Settings
-
-**Edit:** `src/utils/websocketClient.ts`
-
-```typescript
-// Reconnection settings:
-private maxReconnectAttempts: number = 10;     // Max attempts
-private reconnectDelay: number = 1000;         // Start delay (1s)
-private maxReconnectDelay: number = 60000;     // Max delay (60s)
-
-// Keep-alive settings:
-setInterval(() => {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.ping();
-    }
-}, 30000); // Ping every 30 seconds
 ```
 
 ---
@@ -395,7 +385,10 @@ A: Start with polling mode (default). Once comfortable, try WebSocket for better
 A: No, you must restart the bot after changing `USE_WEBSOCKET` in `.env`.
 
 **Q: Does WebSocket use more resources?**
-A: No, actually uses LESS CPU and network (fewer API calls).
+A: Network-wise, more — you receive every trade on Polymarket (not just your
+tracked traders') and filter locally, since there's no working per-wallet
+server-side filter. CPU cost of filtering is negligible (a fast lookup per
+message), but bandwidth is higher than polling's targeted per-trader calls.
 
 **Q: What if WebSocket API changes?**
 A: You can always fall back to polling mode - it will always work.
@@ -404,7 +397,9 @@ A: You can always fall back to polling mode - it will always work.
 A: Slightly - it's newer code. But includes auto-reconnect and error handling.
 
 **Q: Will I miss trades if WebSocket disconnects?**
-A: Currently yes - that's why auto-reconnect is critical. Future version may add polling fallback during reconnection.
+A: No — on reconnect, the monitor runs a REST catch-up fetch for all tracked
+traders, so any trades missed during the disconnect gap are picked up
+(delayed, but not lost).
 
 **Q: Can I run both modes simultaneously?**
 A: Not currently supported. Choose one mode.

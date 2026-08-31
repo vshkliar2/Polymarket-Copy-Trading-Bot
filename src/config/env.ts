@@ -341,6 +341,10 @@ export const ENV = {
     DRY_RUN: process.env.DRY_RUN === 'true',
     CLOB_HTTP_URL: process.env.CLOB_HTTP_URL as string,
     CLOB_WS_URL: process.env.CLOB_WS_URL as string,
+    // When true, trade detection subscribes to Polymarket's real-time trade
+    // firehose instead of polling. Defaults to false (polling) — the safer,
+    // better-understood default.
+    USE_WEBSOCKET: process.env.USE_WEBSOCKET === 'true',
     FETCH_INTERVAL: parseInt(process.env.FETCH_INTERVAL || '1', 10),
     TOO_OLD_TIMESTAMP: parseInt(process.env.TOO_OLD_TIMESTAMP || '24', 10),
     RETRY_LIMIT: parseInt(process.env.RETRY_LIMIT || '3', 10),

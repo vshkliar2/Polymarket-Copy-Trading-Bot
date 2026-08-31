@@ -118,6 +118,7 @@
     },
     "dependencies": {
         "@polymarket/clob-client-v2": "^1.0.0",
+        "@polymarket/real-time-data-client": "^1.4.0",
         "@types/node-telegram-bot-api": "^0.64.13",
         "@types/ws": "^8.18.1",
         "axios": "^1.7.9",

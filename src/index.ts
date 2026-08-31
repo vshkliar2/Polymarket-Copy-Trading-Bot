@@ -3,6 +3,7 @@ import { ENV } from './config/env';
 import createClobClient from './utils/createClobClient';
 import tradeExecutor, { stopTradeExecutor } from './services/tradeExecutor';
 import tradeMonitor, { stopTradeMonitor } from './services/tradeMonitor';
+import websocketTradeMonitor, { stopWebSocketTradeMonitor } from './services/websocketTradeMonitor';
 import Logger from './utils/logger';
 import { performHealthCheck, logHealthCheck } from './utils/healthCheck';
 import TelegramNotifier from './services/telegramNotifier';
@@ -10,6 +11,7 @@ import HealthMonitor from './services/healthMonitor';
 
 const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const PROXY_WALLET = ENV.PROXY_WALLET;
+const USE_WEBSOCKET = ENV.USE_WEBSOCKET;
 
 /**
  * Flag to prevent multiple shutdown attempts
@@ -37,7 +39,11 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
         await TelegramNotifier.notifyShutdown();
 
         // Stop services
-        stopTradeMonitor();
+        if (USE_WEBSOCKET) {
+            stopWebSocketTradeMonitor();
+        } else {
+            stopTradeMonitor();
+        }
         stopTradeExecutor();
         HealthMonitor.stop();
 
@@ -138,8 +144,13 @@ export const main = async (): Promise<void> => {
         Logger.success('CLOB client ready');
 
         Logger.separator();
-        Logger.info('Starting trade monitor...');
-        tradeMonitor();
+        if (USE_WEBSOCKET) {
+            Logger.info('Starting trade monitor (WebSocket mode)...');
+            websocketTradeMonitor();
+        } else {
+            Logger.info('Starting trade monitor (polling mode)...');
+            tradeMonitor();
+        }
 
         Logger.info('Starting trade executor...');
         tradeExecutor(clobClient);
