@@ -164,6 +164,45 @@ class TelegramNotifier {
                 await this.sendMessage(`❌ ${errorMsg}`);
             }
         });
+
+        this.bot.on('callback_query', async (query) => {
+            if (!query.message || !this.isAuthorized(query.message.chat.id)) {
+                return;
+            }
+            const data = query.data ?? '';
+            const [action, address] = data.split(':');
+            if (!address || (action !== 'approve' && action !== 'reject')) {
+                return;
+            }
+
+            try {
+                const { addManualTrader, removeTrader } = await import('./trackedTraders');
+                if (action === 'approve') {
+                    await addManualTrader(address, String(query.from.id));
+                    await this.bot!.answerCallbackQuery(query.id, { text: `Approved ${address}` });
+                    await this.bot!.sendMessage(
+                        this.chatId!,
+                        `✅ Approved <code>${address}</code>`,
+                        {
+                            parse_mode: 'HTML',
+                        }
+                    );
+                } else {
+                    await removeTrader(address);
+                    await this.bot!.answerCallbackQuery(query.id, { text: `Rejected ${address}` });
+                    await this.bot!.sendMessage(
+                        this.chatId!,
+                        `❌ Rejected <code>${address}</code>`,
+                        {
+                            parse_mode: 'HTML',
+                        }
+                    );
+                }
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                await this.bot!.answerCallbackQuery(query.id, { text: `Error: ${errorMsg}` });
+            }
+        });
     }
 
     /**
@@ -257,6 +296,45 @@ ${dryRunPrefix}${emoji} <b>${trade.side} Order ${status}</b>
 <b>Time:</b> ${new Date().toISOString().replace('T', ' ').substring(0, 19)}`;
 
         await this.sendMessage(message.trim());
+    }
+
+    /**
+     * Send a discovery alert with inline Approve/Reject buttons
+     */
+    async notifyDiscoveredTrader(candidate: {
+        address: string;
+        source: 'discovered_leaderboard' | 'discovered_new_wallet';
+        reason: string;
+    }): Promise<void> {
+        if (!this.enabled || !this.bot || !this.chatId) {
+            return;
+        }
+
+        const sourceLabel =
+            candidate.source === 'discovered_leaderboard' ? '📊 Leaderboard' : '🆕 New Wallet';
+        const message = `
+${sourceLabel} <b>Trader Candidate Found</b>
+
+<b>Address:</b> <code>${candidate.address}</code>
+<b>Reason:</b> ${candidate.reason}
+    `.trim();
+
+        try {
+            await this.bot.sendMessage(this.chatId, message, {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '✅ Approve', callback_data: `approve:${candidate.address}` },
+                            { text: '❌ Reject', callback_data: `reject:${candidate.address}` },
+                        ],
+                    ],
+                },
+            });
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            Logger.error(`Failed to send discovery alert: ${errorMsg}`);
+        }
     }
 
     /**
