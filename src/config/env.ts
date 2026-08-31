@@ -14,7 +14,6 @@ export const isValidEthereumAddress = (address: string): boolean => {
  */
 const validateRequiredEnv = (): void => {
     const required = [
-        'USER_ADDRESSES',
         'PROXY_WALLET',
         'PRIVATE_KEY',
         'CLOB_HTTP_URL',
@@ -333,7 +332,9 @@ const parseCopyStrategy = (): CopyStrategyConfig => {
 };
 
 export const ENV = {
-    USER_ADDRESSES: parseUserAddresses(process.env.USER_ADDRESSES as string),
+    USER_ADDRESSES: process.env.USER_ADDRESSES
+        ? parseUserAddresses(process.env.USER_ADDRESSES)
+        : [],
     PROXY_WALLET: process.env.PROXY_WALLET as string,
     PRIVATE_KEY: process.env.PRIVATE_KEY as string,
     // When true, trade execution logs the order that would be submitted and
@@ -345,6 +346,12 @@ export const ENV = {
     // firehose instead of polling. Defaults to false (polling) — the safer,
     // better-understood default.
     USE_WEBSOCKET: process.env.USE_WEBSOCKET === 'true',
+    // How often (seconds) the running monitors/executor re-check
+    // tracked_traders for additions/removals. Default: 60s.
+    TRACKED_TRADERS_REFRESH_SECONDS: parseInt(
+        process.env.TRACKED_TRADERS_REFRESH_SECONDS || '60',
+        10
+    ),
     FETCH_INTERVAL: parseInt(process.env.FETCH_INTERVAL || '1', 10),
     TOO_OLD_TIMESTAMP: parseInt(process.env.TOO_OLD_TIMESTAMP || '24', 10),
     RETRY_LIMIT: parseInt(process.env.RETRY_LIMIT || '3', 10),

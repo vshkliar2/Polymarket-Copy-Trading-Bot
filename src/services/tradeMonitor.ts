@@ -1,5 +1,4 @@
 import { ENV } from '../config/env';
-import { getUserActivityModel, getUserPositionModel } from '../models/userHistory';
 import fetchData from '../utils/fetchData';
 import Logger from '../utils/logger';
 import {
@@ -8,30 +7,51 @@ import {
     fetchUserPositionsAndBalance,
 } from '../utils/positionHelpers';
 import { formatError } from '../utils/errorHelpers';
+import {
+    diffTraderAddresses,
+    getActiveTraderAddresses,
+    seedFromEnvIfEmpty,
+    buildTraderModelMap,
+    TraderModelConfig,
+} from './trackedTraders';
 
 const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const TOO_OLD_TIMESTAMP = ENV.TOO_OLD_TIMESTAMP;
 const FETCH_INTERVAL = ENV.FETCH_INTERVAL;
 
-if (!USER_ADDRESSES || USER_ADDRESSES.length === 0) {
-    throw new Error('USER_ADDRESSES is not defined or empty');
-}
+let userModels: TraderModelConfig[] = [];
 
 /**
- * User model configuration
+ * Format address for display (first 6 + last 4 characters)
  */
-interface UserModelConfig {
-    address: string;
-    UserActivity: ReturnType<typeof getUserActivityModel>;
-    UserPosition: ReturnType<typeof getUserPositionModel>;
-}
+const formatAddress = (address: string): string => {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+};
 
-// Create activity and position models for each user
-const userModels: UserModelConfig[] = USER_ADDRESSES.map((address) => ({
-    address,
-    UserActivity: getUserActivityModel(address),
-    UserPosition: getUserPositionModel(address),
-}));
+const refreshUserModels = async (): Promise<void> => {
+    const activeAddresses = await getActiveTraderAddresses();
+    const currentAddresses = userModels.map((m) => m.address);
+    const { toAdd, toRemove } = diffTraderAddresses(currentAddresses, activeAddresses);
+
+    if (toAdd.length === 0 && toRemove.length === 0) {
+        return;
+    }
+
+    const newModelsMap = buildTraderModelMap(toAdd);
+    const keptModels = userModels.filter((m) => !toRemove.includes(m.address));
+    userModels = [...keptModels, ...Array.from(newModelsMap.values())];
+
+    if (toAdd.length > 0) {
+        Logger.info(
+            `➕ Now tracking ${toAdd.length} new trader(s): ${toAdd.map(formatAddress).join(', ')}`
+        );
+    }
+    if (toRemove.length > 0) {
+        Logger.info(
+            `➖ Stopped tracking ${toRemove.length} trader(s): ${toRemove.map(formatAddress).join(', ')}`
+        );
+    }
+};
 
 /**
  * Initialize and display position information
@@ -44,7 +64,10 @@ const init = async (): Promise<void> => {
         counts.push(count);
     }
     Logger.clearLine();
-    Logger.dbConnection(USER_ADDRESSES, counts);
+    Logger.dbConnection(
+        userModels.map((m) => m.address),
+        counts
+    );
 
     // Show your own positions first
     try {
@@ -112,14 +135,12 @@ const init = async (): Promise<void> => {
     }
 
     Logger.clearLine();
-    Logger.tradersPositions(USER_ADDRESSES, positionCounts, positionDetails, profitabilities);
-};
-
-/**
- * Format address for display (first 6 + last 4 characters)
- */
-const formatAddress = (address: string): string => {
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+    Logger.tradersPositions(
+        userModels.map((m) => m.address),
+        positionCounts,
+        positionDetails,
+        profitabilities
+    );
 };
 
 /**
@@ -128,7 +149,7 @@ const formatAddress = (address: string): string => {
 const processNewTrade = async (
     activity: Record<string, unknown>,
     address: string,
-    UserActivity: UserModelConfig['UserActivity']
+    UserActivity: TraderModelConfig['UserActivity']
 ): Promise<void> => {
     // Skip if too old
     const timestamp = typeof activity.timestamp === 'number' ? activity.timestamp : 0;
@@ -182,7 +203,7 @@ const processNewTrade = async (
  */
 const updateTraderPositions = async (
     address: string,
-    UserPosition: UserModelConfig['UserPosition']
+    UserPosition: TraderModelConfig['UserPosition']
 ): Promise<void> => {
     const { positions } = await fetchUserPositionsAndBalance(address);
 
@@ -231,7 +252,7 @@ const fetchTradeDataForTrader = async ({
     address,
     UserActivity,
     UserPosition,
-}: UserModelConfig): Promise<void> => {
+}: TraderModelConfig): Promise<void> => {
     try {
         // Fetch trade activities from Polymarket API
         const apiUrl = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE`;
@@ -267,12 +288,17 @@ const fetchTradeData = async (): Promise<void> => {
 let isFirstRun = true;
 // Track if monitor should continue running
 let isRunning = true;
+let refreshInterval: NodeJS.Timeout | null = null;
 
 /**
  * Stop the trade monitor gracefully
  */
 export const stopTradeMonitor = (): void => {
     isRunning = false;
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
     Logger.info('Trade monitor shutdown requested...');
 };
 
@@ -281,8 +307,16 @@ export const stopTradeMonitor = (): void => {
  * Monitors traders for new trades and updates positions
  */
 const tradeMonitor = async (): Promise<void> => {
+    await seedFromEnvIfEmpty(USER_ADDRESSES);
+    await refreshUserModels();
+    refreshInterval = setInterval(() => {
+        refreshUserModels().catch((error) => {
+            Logger.error(`Error refreshing tracked traders: ${formatError(error)}`);
+        });
+    }, ENV.TRACKED_TRADERS_REFRESH_SECONDS * 1000);
+
     await init();
-    Logger.success(`Monitoring ${USER_ADDRESSES.length} trader(s) every ${FETCH_INTERVAL}s`);
+    Logger.success(`Monitoring ${userModels.length} trader(s) every ${FETCH_INTERVAL}s`);
     Logger.separator();
 
     // On first run, mark all existing historical trades as already processed

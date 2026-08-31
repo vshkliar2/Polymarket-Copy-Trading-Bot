@@ -9,8 +9,8 @@ import {
     fetchUserPositionsAndBalance,
     findPositionByConditionId,
 } from '../utils/positionHelpers';
+import { diffTraderAddresses, getActiveTraderAddresses } from './trackedTraders';
 
-const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const TRADE_AGGREGATION_ENABLED = ENV.TRADE_AGGREGATION_ENABLED;
 const TRADE_AGGREGATION_WINDOW_SECONDS = ENV.TRADE_AGGREGATION_WINDOW_SECONDS;
 const TRADE_AGGREGATION_MIN_TOTAL_USD = 1.0; // Polymarket minimum
@@ -23,11 +23,21 @@ interface UserActivityModelConfig {
     model: ReturnType<typeof getUserActivityModel>;
 }
 
-// Create activity models for each user
-const userActivityModels: UserActivityModelConfig[] = USER_ADDRESSES.map((address) => ({
-    address,
-    model: getUserActivityModel(address),
-}));
+let userActivityModels: UserActivityModelConfig[] = [];
+
+const refreshUserActivityModels = async (): Promise<void> => {
+    const activeAddresses = await getActiveTraderAddresses();
+    const currentAddresses = userActivityModels.map((m) => m.address);
+    const { toAdd, toRemove } = diffTraderAddresses(currentAddresses, activeAddresses);
+
+    if (toAdd.length === 0 && toRemove.length === 0) {
+        return;
+    }
+
+    const kept = userActivityModels.filter((m) => !toRemove.includes(m.address));
+    const added = toAdd.map((address) => ({ address, model: getUserActivityModel(address) }));
+    userActivityModels = [...kept, ...added];
+};
 
 interface TradeWithUser extends UserActivityInterface {
     userAddress: string;
@@ -279,12 +289,17 @@ const doAggregatedTrading = async (
 
 // Track if executor should continue running
 let isRunning = true;
+let executorRefreshInterval: NodeJS.Timeout | null = null;
 
 /**
  * Stop the trade executor gracefully
  */
 export const stopTradeExecutor = (): void => {
     isRunning = false;
+    if (executorRefreshInterval) {
+        clearInterval(executorRefreshInterval);
+        executorRefreshInterval = null;
+    }
     Logger.info('Trade executor shutdown requested...');
 };
 
@@ -293,7 +308,16 @@ export const stopTradeExecutor = (): void => {
  * Processes trades and executes them based on configuration
  */
 const tradeExecutor = async (clobClient: ClobClient): Promise<void> => {
-    Logger.success(`Trade executor ready for ${USER_ADDRESSES.length} trader(s)`);
+    await refreshUserActivityModels();
+    executorRefreshInterval = setInterval(() => {
+        refreshUserActivityModels().catch((error) => {
+            Logger.error(
+                `Error refreshing tracked traders: ${error instanceof Error ? error.message : String(error)}`
+            );
+        });
+    }, ENV.TRACKED_TRADERS_REFRESH_SECONDS * 1000);
+
+    Logger.success(`Trade executor ready for ${userActivityModels.length} trader(s)`);
     if (TRADE_AGGREGATION_ENABLED) {
         Logger.info(
             `Trade aggregation enabled: ${TRADE_AGGREGATION_WINDOW_SECONDS}s window, $${TRADE_AGGREGATION_MIN_TOTAL_USD} minimum`
@@ -347,11 +371,11 @@ const tradeExecutor = async (clobClient: ClobClient): Promise<void> => {
                     const bufferedCount = tradeAggregationBuffer.size;
                     if (bufferedCount > 0) {
                         Logger.waiting(
-                            USER_ADDRESSES.length,
+                            userActivityModels.length,
                             `${bufferedCount} trade group(s) pending`
                         );
                     } else {
-                        Logger.waiting(USER_ADDRESSES.length);
+                        Logger.waiting(userActivityModels.length);
                     }
                     lastCheck = Date.now();
                 }
@@ -368,7 +392,7 @@ const tradeExecutor = async (clobClient: ClobClient): Promise<void> => {
             } else {
                 // Update waiting message every 300ms for smooth animation
                 if (Date.now() - lastCheck > 300) {
-                    Logger.waiting(USER_ADDRESSES.length);
+                    Logger.waiting(userActivityModels.length);
                     lastCheck = Date.now();
                 }
             }

@@ -1,6 +1,5 @@
 import { RealTimeDataClient, Message, ConnectionStatus } from '@polymarket/real-time-data-client';
 import { ENV } from '../config/env';
-import { getUserActivityModel, getUserPositionModel } from '../models/userHistory';
 import Logger from '../utils/logger';
 import TelegramNotifier from './telegramNotifier';
 import {
@@ -10,34 +9,21 @@ import {
 } from '../utils/positionHelpers';
 import { formatError } from '../utils/errorHelpers';
 import fetchData from '../utils/fetchData';
+import {
+    diffTraderAddresses,
+    getActiveTraderAddresses,
+    seedFromEnvIfEmpty,
+    buildTraderModelMap,
+    TraderModelConfig,
+} from './trackedTraders';
 
 const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const TOO_OLD_TIMESTAMP = ENV.TOO_OLD_TIMESTAMP;
 
-if (!USER_ADDRESSES || USER_ADDRESSES.length === 0) {
-    throw new Error('USER_ADDRESSES is not defined or empty');
-}
-
-/**
- * User model configuration
- */
-interface UserModelConfig {
-    address: string;
-    UserActivity: ReturnType<typeof getUserActivityModel>;
-    UserPosition: ReturnType<typeof getUserPositionModel>;
-}
-
-// Create activity and position models for each user
-const userModels: UserModelConfig[] = USER_ADDRESSES.map((address) => ({
-    address,
-    UserActivity: getUserActivityModel(address),
-    UserPosition: getUserPositionModel(address),
-}));
+let userModels: TraderModelConfig[] = [];
 
 // Fast lookup: lowercase tracked address -> model config
-const trackedAddresses = new Map<string, UserModelConfig>(
-    userModels.map((m) => [m.address.toLowerCase(), m])
-);
+const trackedAddresses = new Map<string, TraderModelConfig>();
 
 // The activity/trades topic is a firehose of ALL Polymarket trades — there is
 // no working server-side per-wallet filter (documented market_slug/event_slug
@@ -46,6 +32,7 @@ const trackedAddresses = new Map<string, UserModelConfig>(
 let client: RealTimeDataClient | null = null;
 let isRunning = false;
 let positionUpdateInterval: NodeJS.Timeout | null = null;
+let refreshInterval: NodeJS.Timeout | null = null;
 
 // Visibility counters, logged periodically so a live-but-quiet connection
 // is distinguishable from a stalled one.
@@ -60,6 +47,36 @@ const formatAddress = (address: string): string => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
 };
 
+const refreshUserModels = async (): Promise<void> => {
+    const activeAddresses = await getActiveTraderAddresses();
+    const currentAddresses = Array.from(trackedAddresses.keys());
+    const { toAdd, toRemove } = diffTraderAddresses(currentAddresses, activeAddresses);
+
+    if (toAdd.length === 0 && toRemove.length === 0) {
+        return;
+    }
+
+    const newModelsMap = buildTraderModelMap(toAdd);
+    for (const addr of toRemove) {
+        trackedAddresses.delete(addr);
+    }
+    for (const [addr, config] of newModelsMap) {
+        trackedAddresses.set(addr, config);
+    }
+    userModels = Array.from(trackedAddresses.values());
+
+    if (toAdd.length > 0) {
+        Logger.info(
+            `➕ Now tracking ${toAdd.length} new trader(s): ${toAdd.map(formatAddress).join(', ')}`
+        );
+    }
+    if (toRemove.length > 0) {
+        Logger.info(
+            `➖ Stopped tracking ${toRemove.length} trader(s): ${toRemove.map(formatAddress).join(', ')}`
+        );
+    }
+};
+
 /**
  * Initialize and display position information
  */
@@ -71,7 +88,10 @@ const init = async (): Promise<void> => {
         counts.push(count);
     }
     Logger.clearLine();
-    Logger.dbConnection(USER_ADDRESSES, counts);
+    Logger.dbConnection(
+        userModels.map((m) => m.address),
+        counts
+    );
 
     // Show your own positions first
     try {
@@ -136,7 +156,12 @@ const init = async (): Promise<void> => {
     }
 
     Logger.clearLine();
-    Logger.tradersPositions(USER_ADDRESSES, positionCounts, positionDetails, profitabilities);
+    Logger.tradersPositions(
+        userModels.map((m) => m.address),
+        positionCounts,
+        positionDetails,
+        profitabilities
+    );
 };
 
 /**
@@ -146,7 +171,7 @@ const init = async (): Promise<void> => {
 const processNewTrade = async (
     activity: Record<string, unknown>,
     address: string,
-    UserActivity: UserModelConfig['UserActivity']
+    UserActivity: TraderModelConfig['UserActivity']
 ): Promise<void> => {
     const timestamp = typeof activity.timestamp === 'number' ? activity.timestamp : 0;
     if (timestamp < TOO_OLD_TIMESTAMP) {
@@ -195,7 +220,7 @@ const processNewTrade = async (
  */
 const updateTraderPositions = async (
     address: string,
-    UserPosition: UserModelConfig['UserPosition']
+    UserPosition: TraderModelConfig['UserPosition']
 ): Promise<void> => {
     const { positions } = await fetchUserPositionsAndBalance(address);
 
@@ -244,7 +269,7 @@ const fetchTradeDataForTrader = async ({
     address,
     UserActivity,
     UserPosition,
-}: UserModelConfig): Promise<void> => {
+}: TraderModelConfig): Promise<void> => {
     try {
         const apiUrl = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE`;
         const activities = (await fetchData(apiUrl)) as Array<Record<string, unknown>>;
@@ -370,6 +395,10 @@ export const stopWebSocketTradeMonitor = (): void => {
         clearInterval(statsLogInterval);
         statsLogInterval = null;
     }
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
     if (client) {
         client.disconnect();
         client = null;
@@ -387,8 +416,16 @@ const websocketTradeMonitor = async (): Promise<void> => {
 
     isRunning = true;
 
+    await seedFromEnvIfEmpty(USER_ADDRESSES);
+    await refreshUserModels();
+    refreshInterval = setInterval(() => {
+        refreshUserModels().catch((error) => {
+            Logger.error(`Error refreshing tracked traders: ${formatError(error)}`);
+        });
+    }, ENV.TRACKED_TRADERS_REFRESH_SECONDS * 1000);
+
     await init();
-    Logger.success(`🚀 WebSocket monitoring ${USER_ADDRESSES.length} trader(s) in real-time`);
+    Logger.success(`🚀 WebSocket monitoring ${userModels.length} trader(s) in real-time`);
     Logger.separator();
 
     // Backfill/mark historical trades as processed BEFORE opening the
