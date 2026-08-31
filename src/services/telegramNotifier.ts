@@ -113,12 +113,14 @@ The bot has been shut down.
         traderAmount?: number;
         yourBalance?: number;
         transactionHash?: string;
+        dryRun?: boolean;
     }): Promise<void> {
         const emoji = trade.side === 'BUY' ? '🟢' : '🔴';
         const status = trade.success ? '✅ SUCCESS' : '❌ FAILED';
+        const dryRunPrefix = trade.dryRun ? '🧪 [DRY RUN — no real order placed] ' : '';
 
         let message = `
-${emoji} <b>${trade.side} Order ${status}</b>
+${dryRunPrefix}${emoji} <b>${trade.side} Order ${status}</b>
 
 <b>Market:</b> ${trade.market.substring(0, 60)}
 <b>Side:</b> ${trade.side}

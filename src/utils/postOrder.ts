@@ -1,22 +1,41 @@
-import { ClobClient, OrderType, Side } from '@polymarket/clob-client';
+import { ClobClient, OrderType, Side } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
 import { UserActivityInterface, UserPositionInterface } from '../interfaces/User';
 import { getUserActivityModel } from '../models/userHistory';
 import Logger from './logger';
 import { calculateOrderSize, getTradeMultiplier } from '../config/copyStrategy';
-import {
-    extractErrorMessage,
-    isInsufficientBalanceOrAllowanceError,
-} from './errorHelpers';
+import { extractErrorMessage, isInsufficientBalanceOrAllowanceError } from './errorHelpers';
 import TelegramNotifier from '../services/telegramNotifier';
 import { checkMarketPositionLimit, checkMarketEndDate } from './portfolioManager';
 
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 const COPY_STRATEGY_CONFIG = ENV.COPY_STRATEGY_CONFIG;
+const DRY_RUN = ENV.DRY_RUN;
 
 // Legacy parameters (for backward compatibility in SELL logic)
 const TRADE_MULTIPLIER = ENV.TRADE_MULTIPLIER;
 const COPY_PERCENTAGE = ENV.COPY_PERCENTAGE;
+
+/**
+ * Submits an order via the CLOB client, unless DRY_RUN is enabled.
+ * In dry-run mode, logs the order that would be submitted and returns a
+ * synthetic success response so downstream bookkeeping (position tracking,
+ * botExcutedTime, Telegram notifications) still runs against realistic data,
+ * without placing any real order or spending real funds.
+ */
+const submitOrder = async (
+    clobClient: ClobClient,
+    orderArgs: { side: Side; tokenID: string; amount: number; price: number }
+) => {
+    if (DRY_RUN) {
+        Logger.info(
+            `🧪 [DRY_RUN] Would submit ${orderArgs.side} order: $${orderArgs.amount.toFixed(2)} @ $${orderArgs.price} (token ${orderArgs.tokenID})`
+        );
+        return { success: true, transactionHash: 'DRY_RUN_NO_TX' };
+    }
+    const signedOrder = await clobClient.createMarketOrder(orderArgs);
+    return clobClient.postOrder(signedOrder, OrderType.FOK);
+};
 
 // Polymarket minimum order sizes
 const MIN_ORDER_SIZE_USD = 1.0; // Minimum order size in USD for BUY orders
@@ -88,9 +107,7 @@ const postOrder = async (
                     price: parseFloat(maxPriceBid.price),
                 };
             }
-            // Order args logged internally
-            const signedOrder = await clobClient.createMarketOrder(order_arges);
-            const resp = await clobClient.postOrder(signedOrder, OrderType.FOK);
+            const resp = await submitOrder(clobClient, order_arges);
             if (resp.success === true) {
                 retry = 0;
                 Logger.orderResult(
@@ -105,6 +122,7 @@ const postOrder = async (
                     amount: order_arges.amount * order_arges.price, // Convert tokens to USD
                     price: order_arges.price,
                     traderAddress: userAddress,
+                    dryRun: DRY_RUN,
                     success: true,
                     traderAmount: trade.usdcSize,
                     yourBalance: my_balance,
@@ -145,6 +163,7 @@ const postOrder = async (
                 amount: my_position.size * trade.price,
                 price: trade.price,
                 traderAddress: userAddress,
+                dryRun: DRY_RUN,
                 success: false,
                 reason: 'Insufficient tokens in your position',
                 retryAttempts: retry,
@@ -169,6 +188,7 @@ const postOrder = async (
                 amount: my_position.size * trade.price,
                 price: trade.price,
                 traderAddress: userAddress,
+                dryRun: DRY_RUN,
                 success: false,
                 reason: `Failed after ${RETRY_LIMIT} attempts - Price slippage or order book issues`,
                 retryAttempts: RETRY_LIMIT,
@@ -320,9 +340,7 @@ const postOrder = async (
             Logger.info(
                 `Creating order: $${orderSize.toFixed(2)} @ $${minPriceAsk.price} (Balance: $${my_balance.toFixed(2)})`
             );
-            // Order args logged internally
-            const signedOrder = await clobClient.createMarketOrder(order_arges);
-            const resp = await clobClient.postOrder(signedOrder, OrderType.FOK);
+            const resp = await submitOrder(clobClient, order_arges);
             if (resp.success === true) {
                 retry = 0;
                 const tokensBought = order_arges.amount / order_arges.price;
@@ -339,6 +357,7 @@ const postOrder = async (
                     amount: order_arges.amount,
                     price: order_arges.price,
                     traderAddress: userAddress,
+                    dryRun: DRY_RUN,
                     success: true,
                     traderAmount: trade.usdcSize,
                     yourBalance: my_balance,
@@ -379,6 +398,7 @@ const postOrder = async (
                 amount: orderCalc.finalAmount,
                 price: trade.price,
                 traderAddress: userAddress,
+                dryRun: DRY_RUN,
                 success: false,
                 reason: 'Insufficient balance or USDC allowance',
                 retryAttempts: retry,
@@ -403,6 +423,7 @@ const postOrder = async (
                 amount: orderCalc.finalAmount,
                 price: trade.price,
                 traderAddress: userAddress,
+                dryRun: DRY_RUN,
                 success: false,
                 reason: `Failed after ${RETRY_LIMIT} attempts - Price slippage or order book issues`,
                 retryAttempts: RETRY_LIMIT,
@@ -468,14 +489,20 @@ const postOrder = async (
             );
         } else {
             // Calculate the % of position the trader is selling
-            const trader_sell_percent = trade.size / (user_position.size + trade.size);
+            // user_position.size is trader's position AFTER the sell
+            // So trader's position BEFORE = user_position.size + trade.size
             const trader_position_before = user_position.size + trade.size;
+            const trader_position_after = user_position.size;
+            const trader_sell_percent = trade.size / trader_position_before;
 
             Logger.info(
-                `Position comparison: Trader has ${trader_position_before.toFixed(2)} tokens, You have ${my_position.size.toFixed(2)} tokens`
+                `📊 Trader position: Before=${trader_position_before.toFixed(2)}, After=${trader_position_after.toFixed(2)}, Sold=${trade.size.toFixed(2)}`
             );
             Logger.info(
-                `Trader selling: ${trade.size.toFixed(2)} tokens (${(trader_sell_percent * 100).toFixed(2)}% of their position)`
+                `📊 Your position: ${my_position.size.toFixed(2)} tokens (tracked: ${totalBoughtTokens.toFixed(2)} tokens)`
+            );
+            Logger.info(
+                `📊 Trader selling: ${trade.size.toFixed(2)} tokens (${(trader_sell_percent * 100).toFixed(2)}% of their position)`
             );
 
             // Use tracked bought tokens if available, otherwise fallback to current position
@@ -571,9 +598,7 @@ const postOrder = async (
                 amount: sellAmount,
                 price: parseFloat(maxPriceBid.price),
             };
-            // Order args logged internally
-            const signedOrder = await clobClient.createMarketOrder(order_arges);
-            const resp = await clobClient.postOrder(signedOrder, OrderType.FOK);
+            const resp = await submitOrder(clobClient, order_arges);
             if (resp.success === true) {
                 retry = 0;
                 totalSoldTokens += order_arges.amount;
@@ -589,6 +614,7 @@ const postOrder = async (
                     amount: order_arges.amount * order_arges.price, // Convert tokens to USD
                     price: order_arges.price,
                     traderAddress: userAddress,
+                    dryRun: DRY_RUN,
                     success: true,
                     traderAmount: trade.usdcSize,
                     yourBalance: my_balance,
@@ -664,6 +690,7 @@ const postOrder = async (
                 amount: my_position.size * trade.price,
                 price: trade.price,
                 traderAddress: userAddress,
+                dryRun: DRY_RUN,
                 success: false,
             }).catch((err) => {
                 const errorMsg = err instanceof Error ? err.message : String(err);
@@ -693,6 +720,7 @@ const postOrder = async (
                 amount: my_position.size * trade.price,
                 price: trade.price,
                 traderAddress: userAddress,
+                dryRun: DRY_RUN,
                 success: false,
                 reason: `Failed after ${RETRY_LIMIT} attempts - Price slippage or order book issues`,
                 retryAttempts: RETRY_LIMIT,
