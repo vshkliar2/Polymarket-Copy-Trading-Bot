@@ -49,6 +49,7 @@
         "analyze-slippage": "ts-node src/scripts/analyzeSlippage.ts",
         "view-trader": "ts-node src/scripts/viewTraderTrades.ts",
         "discover-traders": "ts-node src/scripts/discoverTraders.ts",
+        "discovery-worker": "ts-node src/discoveryWorker.ts",
         "find-traders": "ts-node src/scripts/findBestTraders.ts",
         "find-low-risk": "ts-node src/scripts/findLowRiskTraders.ts",
         "scan-traders": "ts-node src/scripts/scanBestTraders.ts",
