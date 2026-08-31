@@ -386,6 +386,11 @@ export const ENV = {
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
     TELEGRAM_ALERTS_ENABLED: process.env.TELEGRAM_ALERTS_ENABLED === 'true',
+    // Only the main bot process should poll for Telegram commands (/add, /remove,
+    // /list, /pending, approve/reject buttons) — worker processes only send
+    // notifications and must never claim the single getUpdates long-poll slot
+    // a bot token allows.
+    TELEGRAM_COMMAND_LISTENER_ENABLED: process.env.TELEGRAM_COMMAND_LISTENER_ENABLED === 'true',
     HEALTH_CHECK_INTERVAL_HOURS: parseInt(process.env.HEALTH_CHECK_INTERVAL_HOURS || '6', 10),
     // Portfolio management
     MAX_POSITION_PER_MARKET_USD: process.env.MAX_POSITION_PER_MARKET_USD

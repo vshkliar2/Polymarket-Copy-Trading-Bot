@@ -8,6 +8,7 @@ import Logger from './utils/logger';
 import { performHealthCheck, logHealthCheck } from './utils/healthCheck';
 import TelegramNotifier from './services/telegramNotifier';
 import HealthMonitor from './services/healthMonitor';
+import { seedFromEnvIfEmpty } from './services/trackedTraders';
 
 const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const PROXY_WALLET = ENV.PROXY_WALLET;
@@ -128,6 +129,12 @@ export const main = async (): Promise<void> => {
         console.log(`   Run health check: ${colors.cyan}npm run health-check${colors.reset}\n`);
 
         await connectDB();
+
+        // Seed tracked_traders from USER_ADDRESSES exactly once, before either
+        // the monitor or the executor starts. Both are launched fire-and-forget
+        // below, so seeding inside one of them would race the other.
+        await seedFromEnvIfEmpty(USER_ADDRESSES);
+
         Logger.startup(USER_ADDRESSES, PROXY_WALLET);
 
         // Perform initial health check

@@ -10,12 +10,10 @@ import { formatError } from '../utils/errorHelpers';
 import {
     diffTraderAddresses,
     getActiveTraderAddresses,
-    seedFromEnvIfEmpty,
     buildTraderModelMap,
     TraderModelConfig,
 } from './trackedTraders';
 
-const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const TOO_OLD_TIMESTAMP = ENV.TOO_OLD_TIMESTAMP;
 const FETCH_INTERVAL = ENV.FETCH_INTERVAL;
 
@@ -307,7 +305,9 @@ export const stopTradeMonitor = (): void => {
  * Monitors traders for new trades and updates positions
  */
 const tradeMonitor = async (): Promise<void> => {
-    await seedFromEnvIfEmpty(USER_ADDRESSES);
+    // Note: tracked_traders seeding happens once at startup in src/index.ts,
+    // before either the monitor or the executor starts, so both services see a
+    // consistent, already-seeded collection.
     await refreshUserModels();
     refreshInterval = setInterval(() => {
         refreshUserModels().catch((error) => {

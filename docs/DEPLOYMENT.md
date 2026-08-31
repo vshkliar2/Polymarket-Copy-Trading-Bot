@@ -157,6 +157,45 @@ pm2 logs discovery-worker
 pm2 logs new-wallet-worker
 ```
 
+#### Approval is manual — nothing is auto-followed
+
+Both workers **only propose candidates**. A discovered address is written to
+`tracked_traders` with status `pending` and never starts being copied on its
+own. To actually follow one, an operator must act in Telegram:
+
+- `/pending` — list candidates awaiting review
+- Tap **✅ Approve** on the alert (or run `/add <address>`) — this is the only
+  path that sets a trader to `active`
+- Tap **❌ Reject** (or run `/remove <address>`) — marks it `rejected` and
+  drains any trades already queued for that address
+
+If nobody reviews them, candidates sit in `pending` indefinitely. Check
+`/pending` regularly, or the workers do nothing useful for you.
+
+#### Known issue: `discovery-worker` currently finds nothing
+
+Polymarket's leaderboard API (`https://data-api.polymarket.com/leaderboard`)
+returns **HTTP 404** as of this writing. `discovery-worker` runs correctly but
+will report zero candidates until Polymarket restores that endpoint. This is a
+known upstream issue, not a bug in this bot, and needs no action here.
+
+`new-wallet-worker` is **unaffected** — it uses a different, working endpoint
+and will keep proposing candidates normally.
+
+#### Telegram command listener
+
+`TELEGRAM_COMMAND_LISTENER_ENABLED` must be `true` for the main
+`polymarket-bot` app **only** — never for `discovery-worker` or
+`new-wallet-worker`. Telegram permits exactly one `getUpdates` long-poll
+consumer per bot token; if more than one process polls, they collide with HTTP
+409 Conflict errors and your `/add`, `/remove` and Approve/Reject taps are
+delivered to a random process or lost outright.
+
+`ecosystem.config.js` already sets it for `polymarket-bot` only, so under PM2
+this is handled. If you run the processes some other way (systemd, Docker,
+plain `node`), make sure only the main bot process gets the variable — the
+workers are send-only and never need to receive commands.
+
 See `docs/superpowers/specs/2026-08-31-dynamic-trader-management-design.md`
 for the full design.
 

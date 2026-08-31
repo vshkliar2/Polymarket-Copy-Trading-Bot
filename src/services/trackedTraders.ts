@@ -113,6 +113,12 @@ export const addManualTrader = async (address: string, addedBy?: string): Promis
 
 /**
  * Remove (reject) a trader by address. No-op if not found.
+ *
+ * Also drains any of that trader's activity rows still queued for execution
+ * (bot: false, botExcutedTime: 0) by marking them skipped with the existing
+ * historical convention (bot: true, botExcutedTime: 999). Without this, an
+ * address that is later re-added would have the executor pick up and place
+ * real orders for trades that are potentially hours or days stale.
  */
 export const removeTrader = async (address: string): Promise<boolean> => {
     const normalized = address.toLowerCase();
@@ -120,6 +126,27 @@ export const removeTrader = async (address: string): Promise<boolean> => {
         { address: normalized },
         { $set: { status: 'rejected' } }
     );
+
+    if (result.modifiedCount > 0) {
+        try {
+            const UserActivity = getUserActivityModel(normalized);
+            const drained = await UserActivity.updateMany(
+                { bot: false },
+                { $set: { bot: true, botExcutedTime: 999 } }
+            );
+            if (drained.modifiedCount > 0) {
+                Logger.info(
+                    `Skipped ${drained.modifiedCount} unprocessed trade(s) for removed trader ${normalized}`
+                );
+            }
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            Logger.error(
+                `Failed to drain queued trades for removed trader ${normalized}: ${errorMsg}`
+            );
+        }
+    }
+
     return result.modifiedCount > 0;
 };
 

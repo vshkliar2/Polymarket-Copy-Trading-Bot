@@ -17,13 +17,19 @@ module.exports = {
             watch: false,
 
             // Environment variables (optional - uses .env by default)
+            // TELEGRAM_COMMAND_LISTENER_ENABLED must be true for THIS app only.
+            // Telegram permits a single getUpdates long-poll consumer per bot
+            // token, so the worker apps below deliberately leave it unset and
+            // stay send-only.
             env: {
                 NODE_ENV: 'production',
+                TELEGRAM_COMMAND_LISTENER_ENABLED: 'true',
             },
 
             // Development environment
             env_development: {
                 NODE_ENV: 'development',
+                TELEGRAM_COMMAND_LISTENER_ENABLED: 'true',
             },
 
             // Logging

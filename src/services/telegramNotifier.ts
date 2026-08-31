@@ -36,11 +36,24 @@ class TelegramNotifier {
         }
 
         try {
-            this.bot = new TelegramBot(token, { polling: true });
+            // Telegram allows exactly ONE getUpdates long-poll consumer per bot
+            // token. Only the main bot process opts in; worker processes stay
+            // send-only so commands are never lost to a 409 Conflict storm.
+            const shouldListenForCommands = ENV.TELEGRAM_COMMAND_LISTENER_ENABLED;
+            this.bot = new TelegramBot(token, { polling: shouldListenForCommands });
             this.chatId = chatId;
             this.enabled = true;
-            this.registerCommandHandlers();
-            Logger.info('✅ Telegram notifier initialized');
+            if (shouldListenForCommands) {
+                this.registerCommandHandlers();
+                this.bot.on('polling_error', (error) => {
+                    Logger.error(`Telegram polling error: ${error.message}`);
+                });
+            }
+            Logger.info(
+                `✅ Telegram notifier initialized (command listener: ${
+                    shouldListenForCommands ? 'enabled' : 'disabled'
+                })`
+            );
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error);
             Logger.error(`Failed to initialize Telegram bot: ${errorMsg}`);

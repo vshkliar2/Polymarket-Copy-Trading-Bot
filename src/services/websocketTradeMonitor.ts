@@ -12,12 +12,10 @@ import fetchData from '../utils/fetchData';
 import {
     diffTraderAddresses,
     getActiveTraderAddresses,
-    seedFromEnvIfEmpty,
     buildTraderModelMap,
     TraderModelConfig,
 } from './trackedTraders';
 
-const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const TOO_OLD_TIMESTAMP = ENV.TOO_OLD_TIMESTAMP;
 
 let userModels: TraderModelConfig[] = [];
@@ -416,7 +414,9 @@ const websocketTradeMonitor = async (): Promise<void> => {
 
     isRunning = true;
 
-    await seedFromEnvIfEmpty(USER_ADDRESSES);
+    // Note: tracked_traders seeding happens once at startup in src/index.ts,
+    // before either the monitor or the executor starts, so both services see a
+    // consistent, already-seeded collection.
     await refreshUserModels();
     refreshInterval = setInterval(() => {
         refreshUserModels().catch((error) => {
