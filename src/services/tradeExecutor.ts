@@ -51,26 +51,26 @@ interface AggregatedTrade {
 const tradeAggregationBuffer: Map<string, AggregatedTrade> = new Map();
 
 const readTempTrades = async (): Promise<TradeWithUser[]> => {
-    const allTrades: TradeWithUser[] = [];
+    // Query all traders' collections in parallel — they are independent
+    // MongoDB collections, so there is no contention between these reads.
+    const perTraderTrades = await Promise.all(
+        userActivityModels.map(async ({ address, model }) => {
+            // Only get trades that haven't been processed yet (bot: false AND botExcutedTime: 0)
+            // This prevents processing the same trade multiple times
+            const trades = await model
+                .find({
+                    $and: [{ type: 'TRADE' }, { bot: false }, { botExcutedTime: 0 }],
+                })
+                .exec();
 
-    for (const { address, model } of userActivityModels) {
-        // Only get trades that haven't been processed yet (bot: false AND botExcutedTime: 0)
-        // This prevents processing the same trade multiple times
-        const trades = await model
-            .find({
-                $and: [{ type: 'TRADE' }, { bot: false }, { botExcutedTime: 0 }],
-            })
-            .exec();
+            return trades.map((trade) => ({
+                ...(trade.toObject() as UserActivityInterface),
+                userAddress: address,
+            }));
+        })
+    );
 
-        const tradesWithUser = trades.map((trade) => ({
-            ...(trade.toObject() as UserActivityInterface),
-            userAddress: address,
-        }));
-
-        allTrades.push(...tradesWithUser);
-    }
-
-    return allTrades;
+    return perTraderTrades.flat();
 };
 
 /**
@@ -176,10 +176,7 @@ const prepareTradeData = async (trade: TradeWithUser) => {
 /**
  * Execute a single trade
  */
-const executeSingleTrade = async (
-    clobClient: ClobClient,
-    trade: TradeWithUser
-): Promise<void> => {
+const executeSingleTrade = async (clobClient: ClobClient, trade: TradeWithUser): Promise<void> => {
     // Mark trade as being processed immediately to prevent duplicate processing
     const UserActivity = getUserActivityModel(trade.userAddress);
     await UserActivity.updateOne({ _id: trade._id }, { $set: { botExcutedTime: 1 } });

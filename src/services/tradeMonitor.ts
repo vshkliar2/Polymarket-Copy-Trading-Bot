@@ -93,7 +93,7 @@ const init = async (): Promise<void> => {
         const positions = await UserPosition.find().exec();
         positionCounts.push(positions.length);
 
-        const stats = calculatePositionStats(positions.map(p => p.toObject()) as any);
+        const stats = calculatePositionStats(positions.map((p) => p.toObject()) as any);
         profitabilities.push(stats.overallPnl);
 
         // Get top 3 positions by profitability (PnL)
@@ -225,32 +225,42 @@ const updateTraderPositions = async (
 };
 
 /**
- * Fetch and process trade data for all monitored traders
+ * Fetch and process trade data for a single trader
+ */
+const fetchTradeDataForTrader = async ({
+    address,
+    UserActivity,
+    UserPosition,
+}: UserModelConfig): Promise<void> => {
+    try {
+        // Fetch trade activities from Polymarket API
+        const apiUrl = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE`;
+        const activities = (await fetchData(apiUrl)) as Array<Record<string, unknown>>;
+
+        if (!Array.isArray(activities) || activities.length === 0) {
+            return;
+        }
+
+        // Process each activity
+        for (const activity of activities) {
+            await processNewTrade(activity, address, UserActivity);
+        }
+
+        // Update positions
+        await updateTraderPositions(address, UserPosition);
+    } catch (error) {
+        Logger.error(`Error fetching data for ${formatAddress(address)}: ${formatError(error)}`);
+    }
+};
+
+/**
+ * Fetch and process trade data for all monitored traders in parallel.
+ * Traders write to separate MongoDB collections, so there is no write
+ * contention between them; each trader's fetch is independently wrapped
+ * in try/catch so one trader's failure never blocks the others.
  */
 const fetchTradeData = async (): Promise<void> => {
-    for (const { address, UserActivity, UserPosition } of userModels) {
-        try {
-            // Fetch trade activities from Polymarket API
-            const apiUrl = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE`;
-            const activities = (await fetchData(apiUrl)) as Array<Record<string, unknown>>;
-
-            if (!Array.isArray(activities) || activities.length === 0) {
-                continue;
-            }
-
-            // Process each activity
-            for (const activity of activities) {
-                await processNewTrade(activity, address, UserActivity);
-            }
-
-            // Update positions
-            await updateTraderPositions(address, UserPosition);
-        } catch (error) {
-            Logger.error(
-                `Error fetching data for ${formatAddress(address)}: ${formatError(error)}`
-            );
-        }
-    }
+    await Promise.all(userModels.map(fetchTradeDataForTrader));
 };
 
 // Track if this is the first run
