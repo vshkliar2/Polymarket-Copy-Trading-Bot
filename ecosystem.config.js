@@ -59,5 +59,20 @@ module.exports = {
             max_restarts: 10,
             min_uptime: '10s',
         },
+        {
+            name: 'new-wallet-worker',
+            script: './dist/newWalletWorker.js',
+            autorestart: true,
+            watch: false,
+            env: {
+                NODE_ENV: 'production',
+            },
+            error_file: './logs/new-wallet-worker-error.log',
+            out_file: './logs/new-wallet-worker-out.log',
+            log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+            kill_timeout: 5000,
+            max_restarts: 10,
+            min_uptime: '10s',
+        },
     ],
 };

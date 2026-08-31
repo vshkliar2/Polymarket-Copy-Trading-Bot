@@ -356,6 +356,12 @@ export const ENV = {
     DISCOVERY_INTERVAL_HOURS: parseInt(process.env.DISCOVERY_INTERVAL_HOURS || '12', 10),
     // Minimum discoverTraders.ts score (0-100) to trigger a pending-candidate alert.
     DISCOVERY_MIN_SCORE: parseInt(process.env.DISCOVERY_MIN_SCORE || '70', 10),
+    // Minimum USD size of a wallet's FIRST observed trade to trigger a
+    // pending-candidate alert. Default: 500.
+    NEW_WALLET_MIN_TRADE_USD: parseFloat(process.env.NEW_WALLET_MIN_TRADE_USD || '500'),
+    // Rolling window (days) for the seen_wallets TTL index — a wallet
+    // silent longer than this is treated as "new" again. Default: 60.
+    NEW_WALLET_SEEN_TTL_DAYS: parseInt(process.env.NEW_WALLET_SEEN_TTL_DAYS || '60', 10),
     FETCH_INTERVAL: parseInt(process.env.FETCH_INTERVAL || '1', 10),
     TOO_OLD_TIMESTAMP: parseInt(process.env.TOO_OLD_TIMESTAMP || '24', 10),
     RETRY_LIMIT: parseInt(process.env.RETRY_LIMIT || '3', 10),

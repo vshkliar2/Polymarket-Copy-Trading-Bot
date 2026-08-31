@@ -50,6 +50,7 @@
         "view-trader": "ts-node src/scripts/viewTraderTrades.ts",
         "discover-traders": "ts-node src/scripts/discoverTraders.ts",
         "discovery-worker": "ts-node src/discoveryWorker.ts",
+        "new-wallet-worker": "ts-node src/newWalletWorker.ts",
         "find-traders": "ts-node src/scripts/findBestTraders.ts",
         "find-low-risk": "ts-node src/scripts/findLowRiskTraders.ts",
         "scan-traders": "ts-node src/scripts/scanBestTraders.ts",
