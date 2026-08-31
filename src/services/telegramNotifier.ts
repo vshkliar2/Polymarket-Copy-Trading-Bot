@@ -36,9 +36,10 @@ class TelegramNotifier {
         }
 
         try {
-            this.bot = new TelegramBot(token, { polling: false });
+            this.bot = new TelegramBot(token, { polling: true });
             this.chatId = chatId;
             this.enabled = true;
+            this.registerCommandHandlers();
             Logger.info('✅ Telegram notifier initialized');
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error);
@@ -63,6 +64,106 @@ class TelegramNotifier {
             const errorMsg = error instanceof Error ? error.message : String(error);
             Logger.error(`Failed to send Telegram message: ${errorMsg}`);
         }
+    }
+
+    private isAuthorized(chatId: number | string): boolean {
+        return String(chatId) === this.chatId;
+    }
+
+    private registerCommandHandlers(): void {
+        if (!this.bot) {
+            return;
+        }
+
+        this.bot.onText(/\/list/, async (msg) => {
+            if (!this.isAuthorized(msg.chat.id)) {
+                return;
+            }
+            try {
+                const { listTraders } = await import('./trackedTraders');
+                const traders = await listTraders('active');
+                if (traders.length === 0) {
+                    await this.sendMessage('No active tracked traders.');
+                    return;
+                }
+                const lines = traders.map(
+                    (t) =>
+                        `• <code>${t.address}</code> (${t.source}, added ${t.addedAt.toISOString().slice(0, 10)})`
+                );
+                await this.sendMessage(
+                    `<b>Active Traders (${traders.length})</b>\n\n${lines.join('\n')}`
+                );
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                await this.sendMessage(`❌ Error listing traders: ${errorMsg}`);
+            }
+        });
+
+        this.bot.onText(/\/pending/, async (msg) => {
+            if (!this.isAuthorized(msg.chat.id)) {
+                return;
+            }
+            try {
+                const { listTraders } = await import('./trackedTraders');
+                const traders = await listTraders('pending');
+                if (traders.length === 0) {
+                    await this.sendMessage('No pending trader candidates.');
+                    return;
+                }
+                const lines = traders.map(
+                    (t) =>
+                        `• <code>${t.address}</code> (${t.source})${t.discoveryMeta ? `\n  ${t.discoveryMeta.reason}` : ''}`
+                );
+                await this.sendMessage(
+                    `<b>Pending Candidates (${traders.length})</b>\n\n${lines.join('\n')}`
+                );
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                await this.sendMessage(`❌ Error listing pending traders: ${errorMsg}`);
+            }
+        });
+
+        this.bot.onText(/\/add (.+)/, async (msg, match) => {
+            if (!this.isAuthorized(msg.chat.id)) {
+                return;
+            }
+            const address = match?.[1]?.trim();
+            if (!address) {
+                await this.sendMessage('Usage: /add 0xADDRESS');
+                return;
+            }
+            try {
+                const { addManualTrader } = await import('./trackedTraders');
+                await addManualTrader(address, String(msg.from?.id ?? 'telegram'));
+                await this.sendMessage(`✅ Added <code>${address}</code> to active traders.`);
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                await this.sendMessage(`❌ ${errorMsg}`);
+            }
+        });
+
+        this.bot.onText(/\/remove (.+)/, async (msg, match) => {
+            if (!this.isAuthorized(msg.chat.id)) {
+                return;
+            }
+            const address = match?.[1]?.trim();
+            if (!address) {
+                await this.sendMessage('Usage: /remove 0xADDRESS');
+                return;
+            }
+            try {
+                const { removeTrader } = await import('./trackedTraders');
+                const removed = await removeTrader(address);
+                await this.sendMessage(
+                    removed
+                        ? `✅ Removed <code>${address}</code> from active traders.`
+                        : `⚠️ <code>${address}</code> was not found or already inactive.`
+                );
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                await this.sendMessage(`❌ ${errorMsg}`);
+            }
+        });
     }
 
     /**
