@@ -1,4 +1,4 @@
-import { ClobClient, OrderType, Side } from '@polymarket/clob-client';
+import { ClobClient, OrderType, Side } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
 import getMyBalance from '../utils/getMyBalance';
 

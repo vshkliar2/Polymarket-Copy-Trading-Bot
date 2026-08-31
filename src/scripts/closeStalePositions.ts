@@ -1,4 +1,4 @@
-import { AssetType, ClobClient, OrderType, Side } from '@polymarket/clob-client';
+import { AssetType, ClobClient, OrderType, Side } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
 import createClobClient from '../utils/createClobClient';
 import fetchData from '../utils/fetchData';

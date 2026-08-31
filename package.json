@@ -29,6 +29,7 @@
         "set-token-allowance": "ts-node src/scripts/setTokenAllowance.ts",
         "set-ctf-allowance": "ts-node src/scripts/setCtfAllowance.ts",
         "manual-sell": "ts-node src/scripts/manualSell.ts",
+        "check-trader": "ts-node src/scripts/checkTraderAndSell.ts",
         "sell-large": "ts-node src/scripts/sellLargePositions.ts",
         "transfer-to-gnosis": "ts-node src/scripts/transferPositionsToGnosisSafe.ts",
         "fetch-history": "ts-node src/scripts/fetchHistoricalTrades.ts",
@@ -115,8 +116,9 @@
         "typescript-eslint": "^8.23.0"
     },
     "dependencies": {
-        "@polymarket/clob-client": "^4.14.0",
+        "@polymarket/clob-client-v2": "^1.0.0",
         "@types/node-telegram-bot-api": "^0.64.13",
+        "@types/ws": "^8.18.1",
         "axios": "^1.7.9",
         "chalk": "^5.4.1",
         "dotenv": "^16.4.7",

@@ -1,6 +1,5 @@
 import { ethers } from 'ethers';
-import { ClobClient } from '@polymarket/clob-client';
-import { SignatureType } from '@polymarket/order-utils';
+import { ClobClient, SignatureTypeV2 } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
 import Logger from './logger';
 
@@ -26,26 +25,26 @@ const isGnosisSafe = async (address: string): Promise<boolean> => {
 };
 
 const createClobClient = async (): Promise<ClobClient> => {
-    const chainId = 137;
+    const chain = 137; // Polygon
     const host = CLOB_HTTP_URL as string;
     const wallet = new ethers.Wallet(PRIVATE_KEY as string);
 
     // Detect if the proxy wallet is a Gnosis Safe or EOA
     const isProxySafe = await isGnosisSafe(PROXY_WALLET as string);
-    const signatureType = isProxySafe ? SignatureType.POLY_GNOSIS_SAFE : SignatureType.EOA;
 
     Logger.info(
         `Wallet type detected: ${isProxySafe ? 'Gnosis Safe' : 'EOA (Externally Owned Account)'}`
     );
+    const signatureType = isProxySafe ? SignatureTypeV2.POLY_GNOSIS_SAFE : SignatureTypeV2.EOA;
 
-    let clobClient = new ClobClient(
+    // V2 client uses options object instead of positional arguments
+    let clobClient = new ClobClient({
         host,
-        chainId,
-        wallet,
-        undefined,
+        chain,
+        signer: wallet,
         signatureType,
-        isProxySafe ? (PROXY_WALLET as string) : undefined
-    );
+        ...(isProxySafe && { funderAddress: PROXY_WALLET as string }),
+    });
 
     // Suppress console output during API key creation
     const originalConsoleLog = console.log;
@@ -53,19 +52,18 @@ const createClobClient = async (): Promise<ClobClient> => {
     console.log = function () {};
     console.error = function () {};
 
-    let creds = await clobClient.createApiKey();
-    if (!creds.key) {
-        creds = await clobClient.deriveApiKey();
-    }
+    // V2 uses createOrDeriveApiKey() instead of separate createApiKey/deriveApiKey
+    const creds = await clobClient.createOrDeriveApiKey();
 
-    clobClient = new ClobClient(
+    // Create new client instance with credentials
+    clobClient = new ClobClient({
         host,
-        chainId,
-        wallet,
+        chain,
+        signer: wallet,
         creds,
         signatureType,
-        isProxySafe ? (PROXY_WALLET as string) : undefined
-    );
+        ...(isProxySafe && { funderAddress: PROXY_WALLET as string }),
+    });
 
     // Restore console functions
     console.log = originalConsoleLog;

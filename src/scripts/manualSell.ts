@@ -1,6 +1,11 @@
 import { ethers } from 'ethers';
-import { AssetType, ClobClient, OrderType, Side } from '@polymarket/clob-client';
-import { SignatureType } from '@polymarket/order-utils';
+import {
+    AssetType,
+    ClobClient,
+    OrderType,
+    Side,
+    SignatureTypeV2,
+} from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
@@ -11,8 +16,8 @@ const POLYGON_CHAIN_ID = 137;
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 
 // Market search query
-const MARKET_SEARCH_QUERY = 'Maduro out in 2025';
-const SELL_PERCENTAGE = 0.7; // 70%
+const MARKET_SEARCH_QUERY = 'Khamenei out as Supreme Leader of Iran by January 31';
+const SELL_PERCENTAGE = 1.0; // 100%
 
 interface Position {
     asset: string;
@@ -42,37 +47,35 @@ const createClobClient = async (
 ): Promise<ClobClient> => {
     const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
     const isProxySafe = await isGnosisSafe(PROXY_WALLET, provider);
-    const signatureType = isProxySafe ? SignatureType.POLY_GNOSIS_SAFE : SignatureType.EOA;
 
     console.log(`Wallet type: ${isProxySafe ? 'Gnosis Safe' : 'EOA'}`);
+    const signatureType = isProxySafe ? SignatureTypeV2.POLY_GNOSIS_SAFE : SignatureTypeV2.EOA;
 
     const originalConsoleLog = console.log;
     const originalConsoleError = console.error;
     console.log = function () {};
     console.error = function () {};
 
-    let clobClient = new ClobClient(
-        CLOB_HTTP_URL,
-        POLYGON_CHAIN_ID,
-        wallet,
-        undefined,
+    // V2 client uses options object
+    let clobClient = new ClobClient({
+        host: CLOB_HTTP_URL,
+        chain: POLYGON_CHAIN_ID,
+        signer: wallet,
         signatureType,
-        isProxySafe ? PROXY_WALLET : undefined
-    );
+        ...(isProxySafe && { funderAddress: PROXY_WALLET }),
+    });
 
-    let creds = await clobClient.createApiKey();
-    if (!creds.key) {
-        creds = await clobClient.deriveApiKey();
-    }
+    // V2 uses createOrDeriveApiKey()
+    const creds = await clobClient.createOrDeriveApiKey();
 
-    clobClient = new ClobClient(
-        CLOB_HTTP_URL,
-        POLYGON_CHAIN_ID,
-        wallet,
+    clobClient = new ClobClient({
+        host: CLOB_HTTP_URL,
+        chain: POLYGON_CHAIN_ID,
+        signer: wallet,
         creds,
         signatureType,
-        isProxySafe ? PROXY_WALLET : undefined
-    );
+        ...(isProxySafe && { funderAddress: PROXY_WALLET }),
+    });
 
     console.log = originalConsoleLog;
     console.error = originalConsoleError;
@@ -133,8 +136,13 @@ const sellPosition = async (clobClient: ClobClient, position: Position, sellSize
 
             // Find best bid
             const maxPriceBid = orderBook.bids.reduce((max, bid) => {
-                return parseFloat(bid.price) > parseFloat(max.price) ? bid : max;
+                return parseFloat(bid.price) > parseFloat(max?.price ?? '0') ? bid : max;
             }, orderBook.bids[0]);
+
+            if (!maxPriceBid) {
+                console.log('❌ No valid bids found in order book');
+                break;
+            }
 
             console.log(`📊 Best bid: ${maxPriceBid.size} tokens @ $${maxPriceBid.price}`);
 
