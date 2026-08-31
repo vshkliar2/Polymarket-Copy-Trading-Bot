@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "f=$(jq -r '.tool_input.file_path // empty'); b=$(basename \"$f\" 2>/dev/null); if [[ \"$b\" == .env* ]]; then jq -n '{hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"Blocked: editing .env* files is disabled to protect secrets (PRIVATE_KEY etc). Edit manually if intentional.\"}}'; fi"
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); b=$(basename \"$f\" 2>/dev/null); if [[ \"$b\" == .env* && \"$b\" != *.example && \"$b\" != *.sample && \"$b\" != *.template ]]; then jq -n '{hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"Blocked: editing .env* files is disabled to protect secrets (PRIVATE_KEY etc). Edit manually if intentional.\"}}'; fi"
           }
         ]
       }
