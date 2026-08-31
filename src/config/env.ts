@@ -5,7 +5,7 @@ dotenv.config();
 /**
  * Validate Ethereum address format
  */
-const isValidEthereumAddress = (address: string): boolean => {
+export const isValidEthereumAddress = (address: string): boolean => {
     return /^0x[a-fA-F0-9]{40}$/.test(address);
 };
 

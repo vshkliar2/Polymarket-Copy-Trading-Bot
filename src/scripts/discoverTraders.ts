@@ -49,16 +49,16 @@ interface TraderTrade {
     price: number;
 }
 
-interface TraderScore {
+export interface TraderScore {
     address: string;
     username?: string;
     totalScore: number;
     scores: {
-        profitability: number;     // 0-25 points
-        consistency: number;        // 0-25 points
-        activity: number;           // 0-20 points
-        riskManagement: number;     // 0-15 points
-        diversification: number;    // 0-15 points
+        profitability: number; // 0-25 points
+        consistency: number; // 0-25 points
+        activity: number; // 0-20 points
+        riskManagement: number; // 0-15 points
+        diversification: number; // 0-15 points
     };
     metrics: {
         totalPnl: number;
@@ -73,14 +73,14 @@ interface TraderScore {
     reasons: string[];
 }
 
-interface DiscoveryOptions {
-    minPnl?: number;              // Minimum total PnL
-    minWinRate?: number;          // Minimum win rate (%)
-    minMarketsTraded?: number;    // Minimum number of markets
-    minVolume?: number;           // Minimum total volume
-    maxDaysSinceActive?: number;  // Maximum days since last trade
-    limit?: number;               // Number of traders to analyze
-    whalesOnly?: boolean;         // Only find whale traders (>$100k volume)
+export interface DiscoveryOptions {
+    minPnl?: number; // Minimum total PnL
+    minWinRate?: number; // Minimum win rate (%)
+    minMarketsTraded?: number; // Minimum number of markets
+    minVolume?: number; // Minimum total volume
+    maxDaysSinceActive?: number; // Maximum days since last trade
+    limit?: number; // Number of traders to analyze
+    whalesOnly?: boolean; // Only find whale traders (>$100k volume)
 }
 
 // ============================================================================
@@ -95,7 +95,7 @@ async function fetchLeaderboard(limit: number = 100): Promise<LeaderboardEntry[]
         const url = `https://data-api.polymarket.com/leaderboard?window=all&limit=${limit}`;
         Logger.info(`Fetching leaderboard (top ${limit})...`);
 
-        const data = await fetchData(url) as any[];
+        const data = (await fetchData(url)) as any[];
 
         return data.map((entry: any) => ({
             address: entry.user || entry.address,
@@ -116,7 +116,7 @@ async function fetchLeaderboard(limit: number = 100): Promise<LeaderboardEntry[]
 async function fetchTraderPositions(address: string): Promise<TraderPosition[]> {
     try {
         const url = `https://data-api.polymarket.com/positions?user=${address}`;
-        const data = await fetchData(url) as any[];
+        const data = (await fetchData(url)) as any[];
 
         if (!Array.isArray(data)) {
             return [];
@@ -144,7 +144,7 @@ async function fetchTraderPositions(address: string): Promise<TraderPosition[]> 
 async function fetchTraderTrades(address: string, limit: number = 100): Promise<TraderTrade[]> {
     try {
         const url = `https://data-api.polymarket.com/trades?user=${address}&limit=${limit}`;
-        const data = await fetchData(url) as any[];
+        const data = (await fetchData(url)) as any[];
 
         if (!Array.isArray(data)) {
             return [];
@@ -183,41 +183,37 @@ function calculateTraderMetrics(
     totalLosingPositions: number;
 } {
     // Win rate calculation
-    const profitablePositions = positions.filter(p => p.cashPnl > 0).length;
-    const losingPositions = positions.filter(p => p.cashPnl < 0).length;
+    const profitablePositions = positions.filter((p) => p.cashPnl > 0).length;
+    const losingPositions = positions.filter((p) => p.cashPnl < 0).length;
     const totalPositions = profitablePositions + losingPositions;
     const winRate = totalPositions > 0 ? (profitablePositions / totalPositions) * 100 : 0;
 
     // Average position size
-    const avgPositionSize = positions.length > 0
-        ? positions.reduce((sum, p) => sum + p.initialValue, 0) / positions.length
-        : 0;
+    const avgPositionSize =
+        positions.length > 0
+            ? positions.reduce((sum, p) => sum + p.initialValue, 0) / positions.length
+            : 0;
 
     // Profit factor (total profits / total losses)
     const totalProfits = positions
-        .filter(p => p.cashPnl > 0)
+        .filter((p) => p.cashPnl > 0)
         .reduce((sum, p) => sum + p.cashPnl, 0);
     const totalLosses = Math.abs(
-        positions
-            .filter(p => p.cashPnl < 0)
-            .reduce((sum, p) => sum + p.cashPnl, 0)
+        positions.filter((p) => p.cashPnl < 0).reduce((sum, p) => sum + p.cashPnl, 0)
     );
     const profitFactor = totalLosses > 0 ? totalProfits / totalLosses : totalProfits > 0 ? 999 : 0;
 
     // Max drawdown estimation (simplified)
-    const maxLoss = positions.length > 0
-        ? Math.min(...positions.map(p => p.cashPnl), 0)
-        : 0;
+    const maxLoss = positions.length > 0 ? Math.min(...positions.map((p) => p.cashPnl), 0) : 0;
     const totalValue = positions.reduce((sum, p) => sum + p.currentValue, 0);
     const maxDrawdown = totalValue > 0 ? Math.abs(maxLoss / totalValue) * 100 : 0;
 
     // Days since last trade
-    const lastTradeTimestamp = trades.length > 0
-        ? Math.max(...trades.map(t => t.timestamp))
-        : 0;
-    const daysSinceLastTrade = lastTradeTimestamp > 0
-        ? (Date.now() - lastTradeTimestamp * 1000) / (1000 * 60 * 60 * 24)
-        : 999;
+    const lastTradeTimestamp = trades.length > 0 ? Math.max(...trades.map((t) => t.timestamp)) : 0;
+    const daysSinceLastTrade =
+        lastTradeTimestamp > 0
+            ? (Date.now() - lastTradeTimestamp * 1000) / (1000 * 60 * 60 * 24)
+            : 999;
 
     return {
         winRate,
@@ -241,11 +237,11 @@ function scoreTrader(
     const metrics = calculateTraderMetrics(positions, trades);
 
     const scores = {
-        profitability: 0,     // 0-25 points
-        consistency: 0,       // 0-25 points
-        activity: 0,          // 0-20 points
-        riskManagement: 0,    // 0-15 points
-        diversification: 0,   // 0-15 points
+        profitability: 0, // 0-25 points
+        consistency: 0, // 0-25 points
+        activity: 0, // 0-20 points
+        riskManagement: 0, // 0-15 points
+        diversification: 0, // 0-15 points
     };
 
     const reasons: string[] = [];
@@ -385,26 +381,23 @@ function scoreTrader(
 /**
  * Filter traders based on options
  */
-function filterTraders(
-    entries: LeaderboardEntry[],
-    options: DiscoveryOptions
-): LeaderboardEntry[] {
+function filterTraders(entries: LeaderboardEntry[], options: DiscoveryOptions): LeaderboardEntry[] {
     let filtered = entries;
 
     if (options.minPnl) {
-        filtered = filtered.filter(e => e.total_pnl >= options.minPnl!);
+        filtered = filtered.filter((e) => e.total_pnl >= options.minPnl!);
     }
 
     if (options.minMarketsTraded) {
-        filtered = filtered.filter(e => e.markets_traded >= options.minMarketsTraded!);
+        filtered = filtered.filter((e) => e.markets_traded >= options.minMarketsTraded!);
     }
 
     if (options.minVolume) {
-        filtered = filtered.filter(e => e.total_volume >= options.minVolume!);
+        filtered = filtered.filter((e) => e.total_volume >= options.minVolume!);
     }
 
     if (options.whalesOnly) {
-        filtered = filtered.filter(e => e.total_volume >= 100000);
+        filtered = filtered.filter((e) => e.total_volume >= 100000);
     }
 
     return filtered;
@@ -458,7 +451,9 @@ export async function discoverTraders(options: DiscoveryOptions = {}): Promise<T
     for (let i = 0; i < Math.min(filtered.length, 20); i++) {
         const entry = filtered[i]!;
 
-        Logger.info(`[${i + 1}/${Math.min(filtered.length, 20)}] Analyzing ${entry.address.substring(0, 10)}...`);
+        Logger.info(
+            `[${i + 1}/${Math.min(filtered.length, 20)}] Analyzing ${entry.address.substring(0, 10)}...`
+        );
 
         // Fetch detailed data
         const [positions, trades] = await Promise.all([
@@ -471,7 +466,7 @@ export async function discoverTraders(options: DiscoveryOptions = {}): Promise<T
         scores.push(score);
 
         // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
     // Sort by score
@@ -502,13 +497,20 @@ export function printTraderReport(scores: TraderScore[], topN: number = 10): voi
     Logger.info('');
 
     topTraders.forEach((trader, idx) => {
-        const emoji = trader.recommendation === 'EXCELLENT' ? '🌟'
-            : trader.recommendation === 'GOOD' ? '✅'
-            : trader.recommendation === 'AVERAGE' ? '📊'
-            : trader.recommendation === 'POOR' ? '⚠️'
-            : '❌';
+        const emoji =
+            trader.recommendation === 'EXCELLENT'
+                ? '🌟'
+                : trader.recommendation === 'GOOD'
+                  ? '✅'
+                  : trader.recommendation === 'AVERAGE'
+                    ? '📊'
+                    : trader.recommendation === 'POOR'
+                      ? '⚠️'
+                      : '❌';
 
-        Logger.info(`${emoji} #${idx + 1} - ${trader.recommendation} (Score: ${trader.totalScore}/100)`);
+        Logger.info(
+            `${emoji} #${idx + 1} - ${trader.recommendation} (Score: ${trader.totalScore}/100)`
+        );
         Logger.info(`Address: ${trader.address}`);
         if (trader.username) {
             Logger.info(`Username: ${trader.username}`);
@@ -533,7 +535,7 @@ export function printTraderReport(scores: TraderScore[], topN: number = 10): voi
         Logger.info('');
 
         Logger.info('💡 Key Points:');
-        trader.reasons.forEach(reason => {
+        trader.reasons.forEach((reason) => {
             Logger.info(`  ${reason}`);
         });
         Logger.info('');
@@ -545,14 +547,16 @@ export function printTraderReport(scores: TraderScore[], topN: number = 10): voi
     Logger.header('🎯 RECOMMENDATIONS');
     Logger.info('');
 
-    const excellent = scores.filter(s => s.recommendation === 'EXCELLENT');
-    const good = scores.filter(s => s.recommendation === 'GOOD');
+    const excellent = scores.filter((s) => s.recommendation === 'EXCELLENT');
+    const good = scores.filter((s) => s.recommendation === 'GOOD');
 
     if (excellent.length > 0) {
-        Logger.success(`🌟 ${excellent.length} EXCELLENT traders found - highly recommended to copy!`);
+        Logger.success(
+            `🌟 ${excellent.length} EXCELLENT traders found - highly recommended to copy!`
+        );
         Logger.info('   Suggested allocation: 30-40% of capital per trader');
         Logger.info('   Addresses:');
-        excellent.slice(0, 5).forEach(t => {
+        excellent.slice(0, 5).forEach((t) => {
             Logger.info(`   - ${t.address}`);
         });
         Logger.info('');
@@ -562,7 +566,7 @@ export function printTraderReport(scores: TraderScore[], topN: number = 10): voi
         Logger.info(`✅ ${good.length} GOOD traders found - suitable for copying`);
         Logger.info('   Suggested allocation: 15-25% of capital per trader');
         Logger.info('   Addresses:');
-        good.slice(0, 5).forEach(t => {
+        good.slice(0, 5).forEach((t) => {
             Logger.info(`   - ${t.address}`);
         });
         Logger.info('');
@@ -583,7 +587,7 @@ export function printTraderReport(scores: TraderScore[], topN: number = 10): voi
 
         const topAddresses = [...excellent, ...good]
             .slice(0, 5)
-            .map(t => t.address)
+            .map((t) => t.address)
             .join(',');
 
         Logger.info(`USER_ADDRESSES='${topAddresses}'`);
@@ -594,7 +598,10 @@ export function printTraderReport(scores: TraderScore[], topN: number = 10): voi
 /**
  * Export to JSON file
  */
-export function exportToJSON(scores: TraderScore[], filename: string = 'trader-discovery.json'): void {
+export function exportToJSON(
+    scores: TraderScore[],
+    filename: string = 'trader-discovery.json'
+): void {
     const fs = require('fs');
     const path = require('path');
 
@@ -604,11 +611,11 @@ export function exportToJSON(scores: TraderScore[], filename: string = 'trader-d
         timestamp: new Date().toISOString(),
         totalAnalyzed: scores.length,
         recommendations: {
-            excellent: scores.filter(s => s.recommendation === 'EXCELLENT').length,
-            good: scores.filter(s => s.recommendation === 'GOOD').length,
-            average: scores.filter(s => s.recommendation === 'AVERAGE').length,
-            poor: scores.filter(s => s.recommendation === 'POOR').length,
-            avoid: scores.filter(s => s.recommendation === 'AVOID').length,
+            excellent: scores.filter((s) => s.recommendation === 'EXCELLENT').length,
+            good: scores.filter((s) => s.recommendation === 'GOOD').length,
+            average: scores.filter((s) => s.recommendation === 'AVERAGE').length,
+            poor: scores.filter((s) => s.recommendation === 'POOR').length,
+            avoid: scores.filter((s) => s.recommendation === 'AVOID').length,
         },
         traders: scores,
     };
@@ -626,7 +633,7 @@ async function main() {
     const args = process.argv.slice(2);
     const options: DiscoveryOptions = {};
 
-    args.forEach(arg => {
+    args.forEach((arg) => {
         if (arg.startsWith('--min-pnl=')) {
             options.minPnl = parseFloat(arg.split('=')[1]!);
         } else if (arg.startsWith('--min-winrate=')) {
@@ -654,7 +661,7 @@ async function main() {
 
 // Run if called directly
 if (require.main === module) {
-    main().catch(error => {
+    main().catch((error) => {
         Logger.error(`Script failed: ${error}`);
         process.exit(1);
     });

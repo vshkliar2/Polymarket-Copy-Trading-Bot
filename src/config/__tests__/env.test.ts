@@ -78,3 +78,23 @@ describe('Environment variable parsing', () => {
         }).toThrow('Invalid FETCH_INTERVAL');
     });
 });
+
+describe('isValidEthereumAddress', () => {
+    const { isValidEthereumAddress } = require('../env');
+
+    it('should accept a valid 40-hex-character address with 0x prefix', () => {
+        expect(isValidEthereumAddress('0x7c3db723f1d4d8cb9c550095203b686cb11e5c6b')).toBe(true);
+    });
+
+    it('should reject an address without 0x prefix', () => {
+        expect(isValidEthereumAddress('7c3db723f1d4d8cb9c550095203b686cb11e5c6b')).toBe(false);
+    });
+
+    it('should reject an address with wrong length', () => {
+        expect(isValidEthereumAddress('0x7c3db723f1d4d8cb9c550095203b686cb11e5c')).toBe(false);
+    });
+
+    it('should reject a non-hex address', () => {
+        expect(isValidEthereumAddress('0xzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz')).toBe(false);
+    });
+});
