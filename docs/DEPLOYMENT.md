@@ -138,6 +138,28 @@ pm2 logs polymarket-bot
 pm2 monit
 ```
 
+### Discovery Workers (Optional)
+
+Two additional PM2 processes propose new trader candidates for review —
+neither ever trades or auto-adds anyone; both send a Telegram alert with
+Approve/Reject buttons for you to act on.
+
+```bash
+# Start all three processes (bot + both workers) at once:
+pm2 start ecosystem.config.js
+
+# Or start workers individually:
+pm2 start ecosystem.config.js --only discovery-worker
+pm2 start ecosystem.config.js --only new-wallet-worker
+
+# View worker logs:
+pm2 logs discovery-worker
+pm2 logs new-wallet-worker
+```
+
+See `docs/superpowers/specs/2026-08-31-dynamic-trader-management-design.md`
+for the full design.
+
 ## Environment Configuration
 
 ### Required Variables
