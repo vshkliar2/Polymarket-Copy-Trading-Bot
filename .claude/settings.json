@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); b=$(basename \"$f\" 2>/dev/null); if [[ \"$b\" == .env* ]]; then jq -n '{hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"Blocked: editing .env* files is disabled to protect secrets (PRIVATE_KEY etc). Edit manually if intentional.\"}}'; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_response.filePath // .tool_input.file_path // empty'); case \"$f\" in *.ts) npx eslint --fix \"$f\" 2>/dev/null; npx prettier --write \"$f\" 2>/dev/null ;; esac; true"
+          }
+        ]
+      }
+    ]
+  }
+}
