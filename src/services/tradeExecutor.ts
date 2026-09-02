@@ -1,4 +1,3 @@
-import { ClobClient } from '@polymarket/clob-client-v2';
 import { UserActivityInterface } from '../interfaces/User';
 import { ENV } from '../config/env';
 import { getUserActivityModel } from '../models/userHistory';
@@ -12,6 +11,15 @@ import {
 import { diffTraderAddresses, getActiveTraderAddresses } from './trackedTraders';
 import { onNewTrade, NewTradePayload } from './tradeEvents';
 import { formatError } from '../utils/errorHelpers';
+import type createClobClient from '../utils/createClobClient';
+
+/**
+ * The authenticated client returned by createClobClient(). Defined
+ * independently from the identical alias in postOrder.ts (not exported
+ * there) — deriving from createClobClient's own return type keeps both in
+ * sync with its signature without either file importing from the other.
+ */
+type SecureClientType = Awaited<ReturnType<typeof createClobClient>>;
 
 // Safety-net poll interval: catches anything an event might have missed
 // (a crash between save() and emit, a trade inserted outside the normal
@@ -262,7 +270,10 @@ const claimTrade = async (trade: TradeWithUser): Promise<boolean> => {
 /**
  * Execute a single trade
  */
-const executeSingleTrade = async (clobClient: ClobClient, trade: TradeWithUser): Promise<void> => {
+const executeSingleTrade = async (
+    clobClient: SecureClientType,
+    trade: TradeWithUser
+): Promise<void> => {
     // With both an event-driven path and a safety-net sweep able to observe
     // the same trade concurrently, claim it atomically first — only the
     // caller that wins the claim proceeds, avoiding double-execution.
@@ -289,16 +300,36 @@ const executeSingleTrade = async (clobClient: ClobClient, trade: TradeWithUser):
 
     // Execute the trade
     const condition = trade.side === 'BUY' ? 'buy' : 'sell';
-    await postOrder(
-        clobClient,
-        condition,
-        myPosition,
-        userPosition,
-        trade,
-        myBalance,
-        userBalance,
-        trade.userAddress
-    );
+    try {
+        await postOrder(
+            clobClient,
+            condition,
+            myPosition,
+            userPosition,
+            trade,
+            myBalance,
+            userBalance,
+            trade.userAddress
+        );
+    } catch (error) {
+        // postOrder's submitOrder() calls client.placeMarketOrder(), which can
+        // THROW typed errors (InsufficientLiquidityError, RateLimitError,
+        // TransportError, SigningError, etc.) rather than only returning a
+        // rejection object. claimTrade() above already set botExcutedTime: 1
+        // to atomically claim this trade; if we let the throw propagate
+        // uncaught, that claim is never followed by any further status
+        // update, so the trade would be stuck at botExcutedTime: 1 forever —
+        // neither the safety-net sweep nor a future event re-picks up
+        // anything but botExcutedTime: 0. Reset to 0 (not 999, which means
+        // "historical/skipped forever") so a transient failure gets retried
+        // instead of permanently stranding the trade, and swallow the error
+        // here so one failing trade doesn't abort the rest of the batch loop
+        // in doTrading/processTradeBatch.
+        Logger.error(`Error executing trade for ${trade.userAddress}: ${formatError(error)}`);
+        const UserActivity = getUserActivityModel(trade.userAddress);
+        await UserActivity.updateOne({ _id: trade._id }, { $set: { botExcutedTime: 0 } });
+        return;
+    }
 
     Logger.info(`⏱️  Total processing time: ${Date.now() - trade.detectedAt}ms since detection`);
     Logger.separator();
@@ -307,7 +338,7 @@ const executeSingleTrade = async (clobClient: ClobClient, trade: TradeWithUser):
 /**
  * Execute multiple trades
  */
-const doTrading = async (clobClient: ClobClient, trades: TradeWithUser[]): Promise<void> => {
+const doTrading = async (clobClient: SecureClientType, trades: TradeWithUser[]): Promise<void> => {
     for (const trade of trades) {
         await executeSingleTrade(clobClient, trade);
     }
@@ -317,7 +348,7 @@ const doTrading = async (clobClient: ClobClient, trades: TradeWithUser[]): Promi
  * Execute aggregated trades
  */
 const doAggregatedTrading = async (
-    clobClient: ClobClient,
+    clobClient: SecureClientType,
     aggregatedTrades: AggregatedTrade[]
 ): Promise<void> => {
     for (const agg of aggregatedTrades) {
@@ -355,16 +386,37 @@ const doAggregatedTrading = async (
 
         // Execute the aggregated trade
         const condition = agg.side === 'BUY' ? 'buy' : 'sell';
-        await postOrder(
-            clobClient,
-            condition,
-            myPosition,
-            userPosition,
-            syntheticTrade,
-            myBalance,
-            userBalance,
-            agg.userAddress
-        );
+        try {
+            await postOrder(
+                clobClient,
+                condition,
+                myPosition,
+                userPosition,
+                syntheticTrade,
+                myBalance,
+                userBalance,
+                agg.userAddress
+            );
+        } catch (error) {
+            // Same throw-safety gap as executeSingleTrade: postOrder's
+            // submitOrder() can throw (InsufficientLiquidityError,
+            // RateLimitError, TransportError, SigningError, etc.) instead of
+            // only returning a rejection object. All trades in this
+            // aggregation were already claimed (botExcutedTime: 1) above; if
+            // the throw propagated uncaught here, every one of them would be
+            // stuck at botExcutedTime: 1 forever. Reset them all back to 0
+            // (not 999 — that means "historical/skipped forever") so the
+            // safety-net sweep or a future event can retry the whole group,
+            // and continue the aggregatedTrades loop instead of aborting it.
+            Logger.error(
+                `Error executing aggregated trade for ${agg.userAddress}: ${formatError(error)}`
+            );
+            for (const trade of agg.trades) {
+                const UserActivity = getUserActivityModel(trade.userAddress);
+                await UserActivity.updateOne({ _id: trade._id }, { $set: { botExcutedTime: 0 } });
+            }
+            continue;
+        }
 
         Logger.separator();
     }
@@ -403,7 +455,7 @@ export const stopTradeExecutor = (): void => {
  * execution logic itself doesn't change based on how a trade was found.
  */
 const processTradeBatch = async (
-    clobClient: ClobClient,
+    clobClient: SecureClientType,
     trades: TradeWithUser[]
 ): Promise<void> => {
     if (TRADE_AGGREGATION_ENABLED) {
@@ -457,7 +509,7 @@ const processTradeBatch = async (
  * Main trade executor function
  * Processes trades and executes them based on configuration
  */
-const tradeExecutor = async (clobClient: ClobClient): Promise<void> => {
+const tradeExecutor = async (clobClient: SecureClientType): Promise<void> => {
     await refreshUserActivityModels();
     executorRefreshInterval = setInterval(() => {
         refreshUserActivityModels().catch((error) => {
