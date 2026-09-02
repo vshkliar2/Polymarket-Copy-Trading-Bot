@@ -22,12 +22,20 @@ const handleTradeMessage = async (message: Message): Promise<void> => {
     }
 
     try {
-        const alreadySeen = await SeenWalletModel.findOne({ address }).exec();
+        // Atomic upsert instead of find-then-create: concurrent firehose
+        // messages for the same wallet (e.g. several rapid trades) can
+        // both pass a separate findOne check before either finishes
+        // creating, tripping the unique index. findOneAndUpdate with
+        // upsert makes "first message wins" atomic at the DB level.
+        const claim = await SeenWalletModel.findOneAndUpdate(
+            { address },
+            { $setOnInsert: { address, firstSeenAt: new Date() } },
+            { upsert: true, new: false }
+        ).exec();
+        const alreadySeen = claim !== null;
         if (alreadySeen) {
             return; // Not this wallet's first trade in the rolling window
         }
-
-        await SeenWalletModel.create({ address, firstSeenAt: new Date() });
 
         const tradeSize = typeof trade.usdcSize === 'number' ? trade.usdcSize : 0;
         if (tradeSize < ENV.NEW_WALLET_MIN_TRADE_USD) {

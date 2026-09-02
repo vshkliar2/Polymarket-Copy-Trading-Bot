@@ -55,8 +55,15 @@ module.exports = {
             script: './dist/discoveryWorker.js',
             autorestart: true,
             watch: false,
+            // Explicitly forced false: dotenv.config() doesn't override an
+            // already-set process.env var, but if this app's own `env` block
+            // never sets the key, dotenv fills the gap from .env — so a
+            // stray TELEGRAM_COMMAND_LISTENER_ENABLED=true left in .env
+            // (e.g. from before the multi-app PM2 split) leaks into this
+            // worker and causes a 409 getUpdates conflict with the main bot.
             env: {
                 NODE_ENV: 'production',
+                TELEGRAM_COMMAND_LISTENER_ENABLED: 'false',
             },
             error_file: './logs/discovery-worker-error.log',
             out_file: './logs/discovery-worker-out.log',
@@ -70,8 +77,10 @@ module.exports = {
             script: './dist/newWalletWorker.js',
             autorestart: true,
             watch: false,
+            // See discovery-worker's comment above — same reasoning.
             env: {
                 NODE_ENV: 'production',
+                TELEGRAM_COMMAND_LISTENER_ENABLED: 'false',
             },
             error_file: './logs/new-wallet-worker-error.log',
             out_file: './logs/new-wallet-worker-out.log',
