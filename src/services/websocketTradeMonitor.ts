@@ -189,7 +189,17 @@ const processNewTrade = async (
         conditionId: String(activity.conditionId ?? ''),
         type: String(activity.type ?? 'TRADE'),
         size: typeof activity.size === 'number' ? activity.size : 0,
-        usdcSize: typeof activity.usdcSize === 'number' ? activity.usdcSize : 0,
+        // The WebSocket firehose's trade payload has no usdcSize field at
+        // all (unlike the REST /activity endpoint) — only size (token
+        // quantity) and price. Falling back to activity.usdcSize always
+        // produced 0, silently making every copied order size $0. Derive
+        // it directly: dollar value = token size * price per token.
+        usdcSize:
+            typeof activity.usdcSize === 'number'
+                ? activity.usdcSize
+                : typeof activity.size === 'number' && typeof activity.price === 'number'
+                  ? activity.size * activity.price
+                  : 0,
         transactionHash,
         price: typeof activity.price === 'number' ? activity.price : 0,
         asset: String(activity.asset ?? ''),
@@ -306,8 +316,6 @@ const handleTradeMessage = async (message: Message): Promise<void> => {
     }
 
     matchedMessagesSeen++;
-    // TEMP DEBUG — remove after diagnosing usdcSize:0 bug
-    Logger.warning(`RAW PAYLOAD DEBUG: ${JSON.stringify(trade)}`);
 
     try {
         await processNewTrade(trade, userModel.address, userModel.UserActivity);
