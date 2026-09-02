@@ -1,21 +1,22 @@
 import { ethers } from 'ethers';
-import {
-    AssetType,
-    ClobClient,
-    SignatureTypeV2,
-    getContractConfig,
-} from '@polymarket/clob-client-v2';
+import { AssetType } from '@polymarket/bindings/clob';
+import { fetchBalanceAllowance } from '@polymarket/client/actions';
 import { ENV } from '../config/env';
+import createClobClient from '../utils/createClobClient';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
 const RPC_URL = ENV.RPC_URL;
 const USDC_CONTRACT_ADDRESS = ENV.USDC_CONTRACT_ADDRESS;
-const CLOB_HTTP_URL = ENV.CLOB_HTTP_URL;
-const POLYGON_CHAIN_ID = 137;
 const POLYMARKET_EXCHANGE = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E';
 const POLYMARKET_EXCHANGE_LOWER = POLYMARKET_EXCHANGE.toLowerCase();
-const POLYMARKET_COLLATERAL = getContractConfig(POLYGON_CHAIN_ID).collateral;
+// Polygon mainnet USDC.e (Polymarket's collateral token). This was
+// previously read via @polymarket/clob-client-v2's getContractConfig(137)
+// .collateral, which has no equivalent in @polymarket/client or
+// @polymarket/bindings — it is a static lookup table, not an API call.
+// Hardcoded here the same way POLYMARKET_EXCHANGE and NATIVE_USDC_ADDRESS
+// already are in this file.
+const POLYMARKET_COLLATERAL = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB';
 const POLYMARKET_COLLATERAL_LOWER = POLYMARKET_COLLATERAL.toLowerCase();
 const NATIVE_USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
 const NATIVE_USDC_LOWER = NATIVE_USDC_ADDRESS.toLowerCase();
@@ -27,58 +28,6 @@ const USDC_ABI = [
     'function approve(address spender, uint256 amount) returns (bool)',
     'function decimals() view returns (uint8)',
 ];
-
-const buildClobClient = async (provider: ethers.providers.JsonRpcProvider): Promise<ClobClient> => {
-    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    const code = await provider.getCode(PROXY_WALLET);
-    const isProxySafe = code !== '0x';
-    const signatureType = isProxySafe ? SignatureTypeV2.POLY_GNOSIS_SAFE : SignatureTypeV2.EOA;
-    const originalConsoleLog = console.log;
-    const originalConsoleError = console.error;
-    console.log = function () {};
-    console.error = function () {};
-
-    // V2 client uses options object
-    const initialClient = new ClobClient({
-        host: CLOB_HTTP_URL,
-        chain: POLYGON_CHAIN_ID,
-        signer: wallet,
-        signatureType,
-        ...(isProxySafe && { funderAddress: PROXY_WALLET }),
-    });
-
-    let creds;
-    let apiKeyWarning: string | undefined;
-    try {
-        try {
-            // V2 uses createOrDeriveApiKey()
-            creds = await initialClient.createOrDeriveApiKey();
-        } catch (error: any) {
-            const msg = error?.response?.data?.error || error?.message;
-            apiKeyWarning = `⚠️  Unable to obtain API key${msg ? `: ${msg}` : ''}`;
-        }
-    } finally {
-        console.log = originalConsoleLog;
-        console.error = originalConsoleError;
-    }
-
-    if (apiKeyWarning) {
-        console.log(apiKeyWarning);
-    }
-
-    if (!creds?.key) {
-        throw new Error('Failed to obtain Polymarket API credentials');
-    }
-
-    return new ClobClient({
-        host: CLOB_HTTP_URL,
-        chain: POLYGON_CHAIN_ID,
-        signer: wallet,
-        creds,
-        signatureType,
-        ...(isProxySafe && { funderAddress: PROXY_WALLET }),
-    });
-};
 
 const formatClobAmount = (raw: string, decimals: number): string => {
     try {
@@ -92,93 +41,75 @@ const formatClobAmount = (raw: string, decimals: number): string => {
     }
 };
 
-const syncPolymarketAllowanceCache = async (
-    decimals: number,
-    provider: ethers.providers.JsonRpcProvider
-) => {
+const syncPolymarketAllowanceCache = async (decimals: number) => {
     try {
         console.log('🔄 Syncing Polymarket allowance cache...');
-        const clobClient = await buildClobClient(provider);
-        const updateParams = {
-            asset_type: AssetType.COLLATERAL,
+
+        let clobClient;
+        try {
+            clobClient = await createClobClient();
+        } catch (error) {
+            console.log(
+                `⚠️  Unable to create authenticated client: ${error instanceof Error ? error.message : String(error)}`
+            );
+            throw error;
+        }
+
+        const requestParams = {
+            assetType: AssetType.COLLATERAL,
         } as const;
 
-        const updateResult: any = await clobClient.updateBalanceAllowance(updateParams);
-        if (updateResult && typeof updateResult === 'object' && 'error' in updateResult) {
-            console.log(`⚠️  Polymarket cache update failed: ${updateResult.error}`);
-            return;
-        }
-        if (updateResult === '' || updateResult === null || updateResult === undefined) {
-            console.log('ℹ  Polymarket cache update acknowledged (empty response).');
-        } else if (typeof updateResult !== 'object') {
-            console.log(
-                '⚠️  Polymarket cache update returned an unexpected response:',
-                JSON.stringify(updateResult)
-            );
-        } else {
-            console.log('ℹ  Polymarket cache update response:', JSON.stringify(updateResult));
-        }
+        // updateBalanceAllowance is a write/cache-refresh call: it asks
+        // Polymarket to re-read the on-chain allowance/balance and update
+        // its own cached record, returning that same cached snapshot.
+        const updateResult = await clobClient.updateBalanceAllowance(requestParams);
+        console.log(
+            'ℹ  Polymarket cache update response:',
+            JSON.stringify(updateResult, (_key, value) =>
+                typeof value === 'bigint' ? value.toString() : value
+            )
+        );
 
-        const balanceResponse: any = await clobClient.getBalanceAllowance(updateParams);
-        if (!balanceResponse || typeof balanceResponse !== 'object') {
-            console.log(
-                '⚠️  Unexpected response from Polymarket when fetching balance/allowance:',
-                JSON.stringify(balanceResponse)
-            );
-            return;
-        }
+        // fetchBalanceAllowance is the standalone read-only action-function —
+        // it is NOT bound on the client instance in @polymarket/client, so it
+        // must be imported and called separately (confirmed via a live probe
+        // during Task 1: `Object.keys(client)` has zero matches for it).
+        const balanceResponse = await fetchBalanceAllowance(clobClient, requestParams);
 
-        if ('error' in balanceResponse) {
-            console.log(
-                `⚠️  Unable to fetch Polymarket balance/allowance: ${balanceResponse.error}`
-            );
-            return;
-        }
+        const { balance, allowances } = balanceResponse;
 
-        const { balance, allowance } = balanceResponse as {
-            balance?: string;
-            allowance?: string;
-            allowances?: Record<string, string>;
-        };
-        let allowanceValue: string | undefined = allowance;
-        if (!allowanceValue && balanceResponse.allowances) {
-            // Prefer the legacy v1 exchange address if present, but the CLOB
-            // v2 API keys allowances by whichever operator contracts are
-            // relevant to this account (exchangeV2, negRiskAdapter,
-            // negRiskExchangeV2, and others that may be added later) — none
-            // of which is guaranteed to be POLYMARKET_EXCHANGE. Once
-            // updateBalanceAllowance sets an unlimited approval, every
-            // operator contract carries the same value, so falling back to
-            // "any present allowance" is accurate, not just a guess.
-            for (const [address, value] of Object.entries(balanceResponse.allowances)) {
-                if (
-                    address.toLowerCase() === POLYMARKET_EXCHANGE_LOWER &&
-                    typeof value === 'string'
-                ) {
-                    allowanceValue = value;
-                    break;
-                }
+        // allowances is a Record<EvmAddress, bigint> — native bigint, not a
+        // string or number. Prefer the legacy v1 exchange address if
+        // present, but the allowances map is keyed by whichever operator
+        // contracts are relevant to this account (exchangeV2, negRiskAdapter,
+        // negRiskExchangeV2, and others that may be added later) — none of
+        // which is guaranteed to be POLYMARKET_EXCHANGE. Once
+        // updateBalanceAllowance sets an unlimited approval, every operator
+        // contract carries the same value, so falling back to "any present
+        // allowance" is accurate, not just a guess.
+        let allowanceValue: bigint | undefined;
+        for (const [address, value] of Object.entries(allowances)) {
+            if (address.toLowerCase() === POLYMARKET_EXCHANGE_LOWER) {
+                allowanceValue = value;
+                break;
             }
-            if (!allowanceValue) {
-                const firstValue = Object.values(balanceResponse.allowances).find(
-                    (value) => typeof value === 'string'
-                );
-                if (firstValue) {
-                    allowanceValue = firstValue;
-                }
-            }
+        }
+        if (allowanceValue === undefined) {
+            allowanceValue = Object.values(allowances)[0];
         }
 
         if (balance === undefined || allowanceValue === undefined) {
             console.log(
                 '⚠️  Polymarket did not provide balance/allowance data. Raw response:',
-                JSON.stringify(balanceResponse)
+                JSON.stringify(balanceResponse, (_key, value) =>
+                    typeof value === 'bigint' ? value.toString() : value
+                )
             );
             return;
         }
 
         const syncedBalance = formatClobAmount(balance, decimals);
-        const syncedAllowance = formatClobAmount(allowanceValue, decimals);
+        const syncedAllowance = formatClobAmount(allowanceValue.toString(), decimals);
         console.log(`💾 Polymarket Recorded Balance: ${syncedBalance} USDC`);
         console.log(`💾 Polymarket Recorded Allowance: ${syncedAllowance} USDC\n`);
     } catch (syncError: any) {
@@ -314,7 +245,7 @@ async function checkAndSetAllowance() {
             console.log('✅ Allowance is already sufficient! No action needed.');
         }
 
-        await syncPolymarketAllowanceCache(polymarketDecimals, provider);
+        await syncPolymarketAllowanceCache(polymarketDecimals);
     } catch (error: any) {
         console.error('❌ Error:', error.message);
         if (error.code === 'INSUFFICIENT_FUNDS') {
