@@ -1,17 +1,20 @@
 import { ethers } from 'ethers';
-import { getContractConfig } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
 const RPC_URL = ENV.RPC_URL;
-const POLYGON_CHAIN_ID = 137;
 
 // Polymarket Exchange address where tokens need to be approved
 const POLYMARKET_EXCHANGE = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E';
 
-// CTF (Conditional Token Framework) contract address
-const CTF_CONTRACT = getContractConfig(POLYGON_CHAIN_ID).conditionalTokens;
+// Polymarket's Conditional Token Framework contract on Polygon — a stable,
+// chain-level constant. getContractConfig (the old clob-client-v2 helper that
+// provided this) has no equivalent in @polymarket/client; this was always a
+// static lookup table, not an API call, so hardcoding it here is safe and
+// matches the value also hardcoded in redeemResolvedPositions.ts's
+// CTF_CONTRACT_ADDRESS.
+const CTF_CONTRACT = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
 
 // ERC1155 approve for all ABI
 const CTF_ABI = [
