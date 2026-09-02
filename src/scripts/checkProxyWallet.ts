@@ -114,7 +114,9 @@ const checkProxyWallet = async () => {
         if (eoaActivities && eoaActivities.length > 0) {
             const sampleTrade = eoaActivities[0];
             if (sampleTrade) {
-                console.log(`   EOA trades contain proxyWallet: ${sampleTrade.proxyWallet || 'N/A'}`);
+                console.log(
+                    `   EOA trades contain proxyWallet: ${sampleTrade.proxyWallet || 'N/A'}`
+                );
             }
         }
 
@@ -202,11 +204,15 @@ const checkProxyWallet = async () => {
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
         console.log('✅ SUMMARY:\n');
-        console.log('   Your bot uses PROXY_WALLET for trading.');
-        console.log('   This is correct and safe!\n');
-        console.log('   Statistics and charts should be displayed at:');
-        console.log(`   🔗 https://polymarket.com/profile/${PROXY_WALLET}\n`);
-        console.log('   If charts are still not there, this is a Polymarket UI bug.\n');
+        console.log('   Your bot signs orders with PRIVATE_KEY (EOA) and trades on');
+        console.log('   behalf of PROXY_WALLET (funderAddress). This is correct.\n');
+        console.log('   IMPORTANT: data-api.polymarket.com (/positions, /activity) is');
+        console.log('   keyed by your EOA address, not PROXY_WALLET. Your profile,');
+        console.log('   trade history, and open positions are visible at:');
+        console.log(`   🔗 https://polymarket.com/profile/${eoaAddress}\n`);
+        console.log('   PROXY_WALLET is only used for on-chain balance/allowance');
+        console.log('   (CLOB API) checks — it does not have its own visible trade');
+        console.log('   history or profile page with data on it.\n');
     } catch (error) {
         console.error('❌ Error:', error);
     }

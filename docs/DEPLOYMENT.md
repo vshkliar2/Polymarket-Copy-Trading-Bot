@@ -9,6 +9,12 @@ This guide covers deploying the Polymarket Copy Trading Bot to production enviro
 - Polygon wallet with USDC and POL
 - RPC endpoint (Infura, Alchemy, or custom)
 
+> **Deploying on a cloud VM?** Region choice matters for this bot beyond the
+> usual latency/cost tradeoffs — Polymarket geoblocks by request IP, and
+> several EU regions are "close-only" (can't place new orders) at the API
+> level, not just the frontend. See [`docs/GCP_DEPLOYMENT.md`](./GCP_DEPLOYMENT.md)
+> for a full GCP walkthrough including which regions actually work.
+
 ## Deployment Options
 
 ### Option 1: Docker (Recommended)

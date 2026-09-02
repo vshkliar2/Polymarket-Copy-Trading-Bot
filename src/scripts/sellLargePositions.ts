@@ -8,6 +8,7 @@ import {
 } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
 import fetchData from '../utils/fetchData';
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
@@ -256,7 +257,7 @@ async function main() {
         // Получаем все позиции
         console.log('📥 Fetching positions...');
         const positions: Position[] = await fetchData(
-            `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`
+            `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`
         );
         console.log(`Found ${positions.length} position(s)\n`);
 

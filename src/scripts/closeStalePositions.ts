@@ -2,6 +2,7 @@ import { AssetType, ClobClient, OrderType, Side } from '@polymarket/clob-client-
 import { ENV } from '../config/env';
 import createClobClient from '../utils/createClobClient';
 import fetchData from '../utils/fetchData';
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const USER_ADDRESSES = ENV.USER_ADDRESSES;
@@ -237,7 +238,7 @@ const main = async () => {
     console.log('✅ Connected to Polymarket CLOB');
 
     const [myPositions, trackedPositions] = await Promise.all([
-        loadPositions(PROXY_WALLET),
+        loadPositions(MY_EOA_ADDRESS),
         buildTrackedSet(),
     ]);
 

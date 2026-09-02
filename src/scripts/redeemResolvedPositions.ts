@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { ENV } from '../config/env';
 import fetchData from '../utils/fetchData';
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
@@ -8,7 +9,10 @@ const RPC_URL = ENV.RPC_URL || 'https://polygon-rpc.com';
 
 // Contract addresses on Polygon
 const CTF_CONTRACT_ADDRESS = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
-const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'; // USDC on Polygon
+// Must match Polymarket's actual collateral token (USDC.e), not native USDC —
+// the CTF contract validates this against the condition's real collateral
+// and reverts redeemPositions() on a mismatch.
+const USDC_ADDRESS = ENV.USDC_CONTRACT_ADDRESS;
 
 // Thresholds for considering a position "resolved"
 const RESOLVED_HIGH = 0.99; // Position won (price ~$1)
@@ -147,10 +151,10 @@ const main = async () => {
     const ctfContract = new ethers.Contract(CTF_CONTRACT_ADDRESS, CTF_ABI, wallet);
 
     // Load positions
-    const allPositions = await loadPositions(PROXY_WALLET);
+    const allPositions = await loadPositions(MY_EOA_ADDRESS);
 
     if (allPositions.length === 0) {
-        console.log('\n🎉 No open positions detected for proxy wallet.');
+        console.log('\n🎉 No open positions detected.');
         return;
     }
 
@@ -190,9 +194,7 @@ const main = async () => {
         positionsByCondition.set(pos.conditionId, existing);
     });
 
-    console.log(
-        `\n📦 Grouped into ${positionsByCondition.size} unique conditions`
-    );
+    console.log(`\n📦 Grouped into ${positionsByCondition.size} unique conditions`);
 
     let conditionIndex = 0;
     for (const [conditionId, positions] of positionsByCondition.entries()) {

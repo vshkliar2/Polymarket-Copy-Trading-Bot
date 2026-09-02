@@ -2,6 +2,7 @@ import { AssetType, ClobClient, OrderType, Side } from '@polymarket/clob-client-
 import { ENV } from '../config/env';
 import createClobClient from '../utils/createClobClient';
 import fetchData from '../utils/fetchData';
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
@@ -225,7 +226,7 @@ const main = async () => {
     const clobClient = await createClobClient();
     console.log('✅ Connected to Polymarket CLOB');
 
-    const allPositions = await loadPositions(PROXY_WALLET);
+    const allPositions = await loadPositions(MY_EOA_ADDRESS);
 
     if (allPositions.length === 0) {
         console.log('\n🎉 No open positions detected for proxy wallet.');

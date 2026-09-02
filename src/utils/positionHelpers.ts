@@ -1,6 +1,7 @@
 import { UserPositionInterface } from '../interfaces/User';
 import fetchData from './fetchData';
 import getMyBalance from './getMyBalance';
+import MY_EOA_ADDRESS from './getMyEOA';
 import { ENV } from '../config/env';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
@@ -75,7 +76,9 @@ export const fetchUserPositionsAndBalance = async (
 };
 
 /**
- * Fetch my (proxy wallet) positions and USDC balance
+ * Fetch my positions and USDC balance. Positions are queried by the signing
+ * EOA address (data-api's indexing key); USDC balance is queried against
+ * the proxy wallet (where funds actually sit on-chain).
  *
  * @returns Object containing my positions and USDC balance
  */
@@ -84,7 +87,7 @@ export const fetchMyPositionsAndBalance = async (): Promise<{
     usdcBalance: number;
     totalBalance: number;
 }> => {
-    const positionsUrl = `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`;
+    const positionsUrl = `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`;
     const positions = (await fetchData(positionsUrl)) as UserPositionInterface[];
 
     const positionsArray = Array.isArray(positions) ? positions : [];
@@ -119,4 +122,3 @@ export const findPositionByConditionId = (
 ): UserPositionInterface | undefined => {
     return positions.find((position) => position.conditionId === conditionId);
 };
-

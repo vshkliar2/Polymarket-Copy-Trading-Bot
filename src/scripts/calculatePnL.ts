@@ -1,6 +1,7 @@
 import { ENV } from '../config/env';
 import fetchData from '../utils/fetchData';
 import getMyBalance from '../utils/getMyBalance';
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 
@@ -66,12 +67,20 @@ const calculatePnL = async (): Promise<void> => {
         // Fetch all data
         console.log('📊 Fetching data from Polymarket API...\n');
 
-        const [openPositionsData, closedPositionsData, activities, usdcBalance] = await Promise.all([
-            fetchData(`https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`) as Promise<Position[]>,
-            fetchData(`https://data-api.polymarket.com/closed-positions?user=${PROXY_WALLET}`) as Promise<Position[]>,
-            fetchData(`https://data-api.polymarket.com/activity?user=${PROXY_WALLET}&type=TRADE`) as Promise<Activity[]>,
-            getMyBalance(PROXY_WALLET),
-        ]);
+        const [openPositionsData, closedPositionsData, activities, usdcBalance] = await Promise.all(
+            [
+                fetchData(
+                    `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`
+                ) as Promise<Position[]>,
+                fetchData(
+                    `https://data-api.polymarket.com/closed-positions?user=${MY_EOA_ADDRESS}`
+                ) as Promise<Position[]>,
+                fetchData(
+                    `https://data-api.polymarket.com/activity?user=${MY_EOA_ADDRESS}&type=TRADE`
+                ) as Promise<Activity[]>,
+                getMyBalance(PROXY_WALLET),
+            ]
+        );
 
         // Use the data directly - API already separates them
         const openPositions = Array.isArray(openPositionsData) ? openPositionsData : [];
@@ -166,9 +175,13 @@ const displayPnLSummary = (summary: PnLSummary): void => {
     const totalIcon = summary.totalPnl >= 0 ? '🎉' : '⚠️';
 
     console.log(`   ${realizedIcon} Realized P&L:           $${summary.realizedPnl.toFixed(2)}`);
-    console.log(`   ${unrealizedIcon} Unrealized P&L:         $${summary.unrealizedPnl.toFixed(2)}`);
+    console.log(
+        `   ${unrealizedIcon} Unrealized P&L:         $${summary.unrealizedPnl.toFixed(2)}`
+    );
     console.log(`   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    console.log(`   ${totalIcon} TOTAL P&L:              $${summary.totalPnl.toFixed(2)} (${summary.totalPnlPercent >= 0 ? '+' : ''}${summary.totalPnlPercent.toFixed(2)}%)\n`);
+    console.log(
+        `   ${totalIcon} TOTAL P&L:              $${summary.totalPnl.toFixed(2)} (${summary.totalPnlPercent >= 0 ? '+' : ''}${summary.totalPnlPercent.toFixed(2)}%)\n`
+    );
 
     // Trading activity
     console.log('📊 TRADING ACTIVITY:');
@@ -203,11 +216,15 @@ const displayOpenPositionsBreakdown = (positions: Position[]): void => {
         const pnlIcon = (pos.percentPnl || 0) >= 0 ? '📈' : '📉';
         console.log(`${idx + 1}. ${pnlIcon} ${pos.title || 'Unknown Market'}`);
         console.log(`   Outcome: ${pos.outcome || 'N/A'}`);
-        console.log(`   Size: ${(pos.size || 0).toFixed(2)} tokens @ avg $${(pos.avgPrice || 0).toFixed(3)}`);
+        console.log(
+            `   Size: ${(pos.size || 0).toFixed(2)} tokens @ avg $${(pos.avgPrice || 0).toFixed(3)}`
+        );
         console.log(`   Current Price: $${(pos.curPrice || 0).toFixed(3)}`);
         console.log(`   Initial Value: $${(pos.initialValue || 0).toFixed(2)}`);
         console.log(`   Current Value: $${(pos.currentValue || 0).toFixed(2)}`);
-        console.log(`   P&L: $${(pos.cashPnl || 0).toFixed(2)} (${(pos.percentPnl || 0).toFixed(2)}%)`);
+        console.log(
+            `   P&L: $${(pos.cashPnl || 0).toFixed(2)} (${(pos.percentPnl || 0).toFixed(2)}%)`
+        );
         if (pos.realizedPnl && Math.abs(pos.realizedPnl) > 0.01) {
             console.log(`   Realized P&L: $${pos.realizedPnl.toFixed(2)}`);
         }
@@ -220,7 +237,9 @@ const displayOpenPositionsBreakdown = (positions: Position[]): void => {
     console.log(`TOTALS:`);
     console.log(`   • Initial Value: $${totalInitial.toFixed(2)}`);
     console.log(`   • Current Value: $${totalValue.toFixed(2)}`);
-    console.log(`   • Unrealized P&L: $${totalUnrealized.toFixed(2)} (${totalInitial > 0 ? ((totalUnrealized / totalInitial) * 100).toFixed(2) : '0.00'}%)\n`);
+    console.log(
+        `   • Unrealized P&L: $${totalUnrealized.toFixed(2)} (${totalInitial > 0 ? ((totalUnrealized / totalInitial) * 100).toFixed(2) : '0.00'}%)\n`
+    );
 };
 
 const displayClosedPositionsBreakdown = (positions: Position[]): void => {
@@ -245,7 +264,9 @@ const displayClosedPositionsBreakdown = (positions: Position[]): void => {
         console.log(`${idx + 1}. ${pnlIcon} ${pos.title || 'Unknown Market'}`);
         console.log(`   Outcome: ${pos.outcome || 'N/A'}`);
         console.log(`   Initial Value: $${(pos.initialValue || 0).toFixed(2)}`);
-        console.log(`   Realized P&L: $${(pos.realizedPnl || 0).toFixed(2)} (${(pos.percentRealizedPnl || 0).toFixed(2)}%)`);
+        console.log(
+            `   Realized P&L: $${(pos.realizedPnl || 0).toFixed(2)} (${(pos.percentRealizedPnl || 0).toFixed(2)}%)`
+        );
         if (pos.redeemable) {
             console.log(`   ⚠️  Redeemable - run 'npm run redeem-resolved' to claim winnings`);
         }
@@ -257,7 +278,9 @@ const displayClosedPositionsBreakdown = (positions: Position[]): void => {
 
     console.log(`TOTALS:`);
     console.log(`   • Initial Value: $${totalInitial.toFixed(2)}`);
-    console.log(`   • Realized P&L: $${totalRealized.toFixed(2)} (${totalInitial > 0 ? ((totalRealized / totalInitial) * 100).toFixed(2) : '0.00'}%)\n`);
+    console.log(
+        `   • Realized P&L: $${totalRealized.toFixed(2)} (${totalInitial > 0 ? ((totalRealized / totalInitial) * 100).toFixed(2) : '0.00'}%)\n`
+    );
 };
 
 const displayTradingActivity = (activities: Activity[]): void => {
@@ -279,9 +302,13 @@ const displayTradingActivity = (activities: Activity[]): void => {
         console.log(`${idx + 1}. ${sideIcon} ${trade.side} - ${date.toLocaleString('en-US')}`);
         console.log(`   ${trade.title || 'Unknown Market'}`);
         console.log(`   ${trade.outcome || 'N/A'}`);
-        console.log(`   Volume: $${(trade.usdcSize || 0).toFixed(2)} @ $${(trade.price || 0).toFixed(3)}`);
+        console.log(
+            `   Volume: $${(trade.usdcSize || 0).toFixed(2)} @ $${(trade.price || 0).toFixed(3)}`
+        );
         if (trade.transactionHash) {
-            console.log(`   TX: ${trade.transactionHash.slice(0, 10)}...${trade.transactionHash.slice(-8)}`);
+            console.log(
+                `   TX: ${trade.transactionHash.slice(0, 10)}...${trade.transactionHash.slice(-8)}`
+            );
             console.log(`   🔗 https://polygonscan.com/tx/${trade.transactionHash}`);
         }
         console.log('');
@@ -302,9 +329,13 @@ const displayTopPerformers = (openPositions: Position[], closedPositions: Positi
         console.log('📈 Top Open Positions by P&L %:\n');
         topOpen.forEach((pos, idx) => {
             const pnlIcon = (pos.percentPnl || 0) >= 0 ? '📈' : '📉';
-            console.log(`   ${idx + 1}. ${pnlIcon} ${(pos.percentPnl || 0).toFixed(2)}% - ${pos.title || 'Unknown'}`);
+            console.log(
+                `   ${idx + 1}. ${pnlIcon} ${(pos.percentPnl || 0).toFixed(2)}% - ${pos.title || 'Unknown'}`
+            );
             console.log(`      ${pos.outcome || 'N/A'}`);
-            console.log(`      P&L: $${(pos.cashPnl || 0).toFixed(2)} (${(pos.percentPnl || 0).toFixed(2)}%)`);
+            console.log(
+                `      P&L: $${(pos.cashPnl || 0).toFixed(2)} (${(pos.percentPnl || 0).toFixed(2)}%)`
+            );
             console.log('');
         });
     }
@@ -318,26 +349,44 @@ const displayTopPerformers = (openPositions: Position[], closedPositions: Positi
         console.log('✅ Top Closed Positions by Realized P&L:\n');
         topClosed.forEach((pos, idx) => {
             const pnlIcon = (pos.realizedPnl || 0) >= 0 ? '✅' : '❌';
-            console.log(`   ${idx + 1}. ${pnlIcon} $${(pos.realizedPnl || 0).toFixed(2)} - ${pos.title || 'Unknown'}`);
+            console.log(
+                `   ${idx + 1}. ${pnlIcon} $${(pos.realizedPnl || 0).toFixed(2)} - ${pos.title || 'Unknown'}`
+            );
             console.log(`      ${pos.outcome || 'N/A'}`);
-            console.log(`      P&L: $${(pos.realizedPnl || 0).toFixed(2)} (${(pos.percentRealizedPnl || 0).toFixed(2)}%)`);
+            console.log(
+                `      P&L: $${(pos.realizedPnl || 0).toFixed(2)} (${(pos.percentRealizedPnl || 0).toFixed(2)}%)`
+            );
             console.log('');
         });
     }
 
     // Worst 5 positions (all combined)
-    const allPositions = [...openPositions.map(p => ({ ...p, pnl: p.cashPnl || 0, percent: p.percentPnl || 0, type: 'open' })),
-                          ...closedPositions.map(p => ({ ...p, pnl: p.realizedPnl || 0, percent: p.percentRealizedPnl || 0, type: 'closed' }))];
+    const allPositions = [
+        ...openPositions.map((p) => ({
+            ...p,
+            pnl: p.cashPnl || 0,
+            percent: p.percentPnl || 0,
+            type: 'open',
+        })),
+        ...closedPositions.map((p) => ({
+            ...p,
+            pnl: p.realizedPnl || 0,
+            percent: p.percentRealizedPnl || 0,
+            type: 'closed',
+        })),
+    ];
     const worstPositions = [...allPositions]
         .sort((a, b) => a.pnl - b.pnl)
         .slice(0, 5)
-        .filter(p => p.pnl < 0);
+        .filter((p) => p.pnl < 0);
 
     if (worstPositions.length > 0) {
         console.log('📉 Worst Performing Positions:\n');
         worstPositions.forEach((pos, idx) => {
             const typeIcon = pos.type === 'open' ? '📊' : '✅';
-            console.log(`   ${idx + 1}. ${typeIcon} $${pos.pnl.toFixed(2)} - ${pos.title || 'Unknown'} (${pos.type})`);
+            console.log(
+                `   ${idx + 1}. ${typeIcon} $${pos.pnl.toFixed(2)} - ${pos.title || 'Unknown'} (${pos.type})`
+            );
             console.log(`      ${pos.outcome || 'N/A'}`);
             console.log(`      P&L: $${pos.pnl.toFixed(2)} (${pos.percent.toFixed(2)}%)`);
             console.log('');

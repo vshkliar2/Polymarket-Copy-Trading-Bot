@@ -1,5 +1,6 @@
 import { ENV } from '../config/env';
 import fetchData from '../utils/fetchData';
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 
@@ -47,7 +48,7 @@ const checkDiscrepancy = async () => {
         // 1. Get all positions (open and closed)
         console.log('📊 Fetching data from Polymarket API...\n');
 
-        const positionsUrl = `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`;
+        const positionsUrl = `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`;
         const positions: Position[] = await fetchData(positionsUrl);
 
         console.log(`Fetched positions: ${positions.length}\n`);
@@ -124,9 +125,7 @@ const checkDiscrepancy = async () => {
         const totalRealized = totalOpenRealized + totalClosedRealized;
 
         console.log(`   • Open positions - Realized P&L: $${totalOpenRealized.toFixed(2)}`);
-        console.log(
-            `   • Closed positions - Realized P&L: $${totalClosedRealized.toFixed(2)}`
-        );
+        console.log(`   • Closed positions - Realized P&L: $${totalClosedRealized.toFixed(2)}`);
         console.log(`   • Unrealized P&L: $${totalUnrealizedPnl.toFixed(2)}`);
         console.log(`   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
         console.log(`   💰 TOTAL REALIZED PROFIT: $${totalRealized.toFixed(2)}\n`);
@@ -135,7 +134,7 @@ const checkDiscrepancy = async () => {
 
         // 6. Check through trade history
         console.log('🔎 CHECK THROUGH TRADE HISTORY:\n');
-        const activityUrl = `https://data-api.polymarket.com/activity?user=${PROXY_WALLET}&type=TRADE`;
+        const activityUrl = `https://data-api.polymarket.com/activity?user=${MY_EOA_ADDRESS}&type=TRADE`;
         const activities: Activity[] = await fetchData(activityUrl);
 
         // Group trades by markets
@@ -180,9 +179,7 @@ const checkDiscrepancy = async () => {
             }
         }
 
-        console.log(
-            `   💰 Calculated realized profit: $${calculatedRealizedPnl.toFixed(2)}`
-        );
+        console.log(`   💰 Calculated realized profit: $${calculatedRealizedPnl.toFixed(2)}`);
         console.log(`   📊 Markets with closed profit: ${marketsWithProfit}\n`);
 
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
@@ -204,7 +201,7 @@ const checkDiscrepancy = async () => {
 
         console.log('   📈 Why chart shows $0.00:');
         console.log('   • Amount too small ($2-12) for visualization');
-        console.log('   • Timeline doesn\'t start from $0');
+        console.log("   • Timeline doesn't start from $0");
         console.log('   • Chart requires at least several data points');
         console.log('   • UI update delay (can be 1-24 hours)\n');
 

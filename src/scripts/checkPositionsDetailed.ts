@@ -1,7 +1,5 @@
-import { ENV } from '../config/env';
 import fetchData from '../utils/fetchData';
-
-const PROXY_WALLET = ENV.PROXY_WALLET;
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 interface Position {
     asset: string;
@@ -25,7 +23,7 @@ async function checkPositions() {
     console.log('\n📊 CURRENT POSITIONS:\n');
 
     const positions: Position[] = await fetchData(
-        `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`
+        `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`
     );
 
     if (!positions || positions.length === 0) {

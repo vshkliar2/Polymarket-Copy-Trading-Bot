@@ -133,7 +133,6 @@ npm run audit-old        # Audit copy-trading algorithm (prior logic)
 npm run verify-allowance # Verify USDC allowance is set correctly
 npm run set-ctf-allowance # Set CTF (conditional token) allowance
 npm run check-trader     # Check a specific trader, optionally sell
-npm run check-both       # Check both EOA and proxy wallet balances
 npm run check-pnl        # Check for PnL discrepancies
 npm run calculate-pnl    # Calculate realized/unrealized PnL
 npm run analyze-slippage # Analyze slippage on executed trades
@@ -247,3 +246,5 @@ All scripts can be run via npm scripts defined in package.json.
 5. **MongoDB connection string** - Must include database name and proper authentication
 6. **Trade aggregation timing** - Buffered trades won't execute until time window expires
 7. **`.env.backup` and similar copies** - Any file holding `PRIVATE_KEY` must be gitignored (`.env.backup` is); never `git add -A`/`git add .` without checking `git status` first
+8. **`USDC_CONTRACT_ADDRESS` must be USDC.e, not native USDC** - Polymarket's collateral token on Polygon is USDC.e (`0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB`), not native/bridged USDC (`0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`). Getting this wrong makes `getMyBalance()` and any on-chain `redeemPositions()` call silently/incorrectly report a $0 balance or revert, even when the account is genuinely funded.
+9. **EOA vs. proxy wallet: two different addresses, two different query keys** - `PROXY_WALLET` is your CLOB `funderAddress`/on-chain funds custody address; your signing key (`PRIVATE_KEY`) derives a separate EOA address. These may be the *same* address (if trading directly as an EOA with no proxy) or *different* (if Polymarket deployed a proxy contract for you) - both are valid Polymarket account configurations. Critically, **`data-api.polymarket.com`'s `/positions`, `/activity`, and `/closed-positions` endpoints are keyed by the EOA address, not `PROXY_WALLET`** - querying them with `PROXY_WALLET` when the two addresses differ silently returns empty results. Use `MY_EOA_ADDRESS` from `src/utils/getMyEOA.ts` (derived from `PRIVATE_KEY`) for these endpoints; keep using `PROXY_WALLET` for CLOB balance/allowance checks and `funderAddress` in order signing, where it's correct.

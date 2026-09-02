@@ -1,7 +1,9 @@
 import fetchData from '../utils/fetchData';
-import { ENV } from '../config/env';
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
-const WALLET = ENV.PROXY_WALLET;
+// data-api's /activity endpoint is keyed by the signing EOA address, not
+// PROXY_WALLET — see src/utils/getMyEOA.ts.
+const WALLET = MY_EOA_ADDRESS;
 
 interface Activity {
     proxyWallet: string;

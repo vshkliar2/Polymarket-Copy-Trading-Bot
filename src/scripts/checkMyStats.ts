@@ -1,6 +1,7 @@
 import { ENV } from '../config/env';
 import fetchData from '../utils/fetchData';
 import getMyBalance from '../utils/getMyBalance';
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 
@@ -51,7 +52,7 @@ const checkMyStats = async () => {
 
         // 2. Open Positions
         console.log('📊 OPEN POSITIONS');
-        const positionsUrl = `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`;
+        const positionsUrl = `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`;
         const positions: Position[] = await fetchData(positionsUrl);
 
         if (positions && positions.length > 0) {
@@ -105,7 +106,7 @@ const checkMyStats = async () => {
         // 3. Trade History (last 50)
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
         console.log('📜 TRADE HISTORY (last 20)\n');
-        const activityUrl = `https://data-api.polymarket.com/activity?user=${PROXY_WALLET}&type=TRADE`;
+        const activityUrl = `https://data-api.polymarket.com/activity?user=${MY_EOA_ADDRESS}&type=TRADE`;
         const activities: Activity[] = await fetchData(activityUrl);
 
         if (activities && activities.length > 0) {
@@ -124,7 +125,9 @@ const checkMyStats = async () => {
             console.log(
                 `      • Sells: ${sellTrades.length} (volume: $${totalSellVolume.toFixed(2)})`
             );
-            console.log(`      • Total volume: $${(totalBuyVolume + totalSellVolume).toFixed(2)}\n`);
+            console.log(
+                `      • Total volume: $${(totalBuyVolume + totalSellVolume).toFixed(2)}\n`
+            );
 
             // Last 20 trades
             const recentTrades = activities.slice(0, 20);
@@ -162,7 +165,9 @@ const checkMyStats = async () => {
             const totalUnrealizedPnl = positions.reduce((sum, p) => sum + (p.cashPnl || 0), 0);
 
             console.log('   ✅ Realized P&L (closed positions):');
-            console.log(`      → $${totalRealizedPnl.toFixed(2)} ← THIS is displayed on the chart\n`);
+            console.log(
+                `      → $${totalRealizedPnl.toFixed(2)} ← THIS is displayed on the chart\n`
+            );
 
             console.log('   📊 Unrealized P&L (open positions):');
             console.log(

@@ -7,6 +7,7 @@ import {
     SignatureTypeV2,
 } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
@@ -291,7 +292,7 @@ async function main() {
 
         // ==================== CHECK YOUR POSITION ====================
         console.log('📥 Fetching your positions...');
-        const myPositions = await fetchPositions(PROXY_WALLET);
+        const myPositions = await fetchPositions(MY_EOA_ADDRESS);
         console.log(`Found ${myPositions.length} position(s)\n`);
 
         const myPosition = myPositions.find(

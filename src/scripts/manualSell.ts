@@ -7,6 +7,7 @@ import {
     SignatureTypeV2,
 } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
@@ -84,7 +85,7 @@ const createClobClient = async (
 };
 
 const fetchPositions = async (): Promise<Position[]> => {
-    const url = `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`;
+    const url = `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`;
     const response = await fetch(url);
     if (!response.ok) {
         throw new Error(`Failed to fetch positions: ${response.statusText}`);
