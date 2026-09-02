@@ -1,3 +1,16 @@
+import { OrderResponseErrorCode } from '@polymarket/bindings/clob';
+
+/**
+ * @polymarket/client's OrderResponse is a discriminated union with a typed
+ * `code: OrderResponseErrorCode` on rejection — an exact enum comparison
+ * instead of clob-client-v2's fragile message string-matching.
+ */
+export const isInsufficientBalanceOrAllowanceCode = (
+    code: OrderResponseErrorCode | undefined
+): boolean => {
+    return code === OrderResponseErrorCode.INSUFFICIENT_BALANCE_OR_ALLOWANCE;
+};
+
 /**
  * Extract error message from various error response formats
  *
@@ -89,4 +102,3 @@ export const getErrorStack = (error: unknown): string | undefined => {
     }
     return undefined;
 };
-

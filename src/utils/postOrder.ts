@@ -1,12 +1,23 @@
-import { ClobClient, OrderType, Side } from '@polymarket/clob-client-v2';
+import { OrderSide, OrderType } from '@polymarket/client';
+import { OrderPostStatus } from '@polymarket/bindings/clob';
+import type { AcceptedOrderResponse, OrderResponse } from '@polymarket/bindings/clob';
 import { ENV } from '../config/env';
 import { UserActivityInterface, UserPositionInterface } from '../interfaces/User';
 import { getUserActivityModel } from '../models/userHistory';
 import Logger from './logger';
 import { calculateOrderSize, getTradeMultiplier } from '../config/copyStrategy';
-import { extractErrorMessage, isInsufficientBalanceOrAllowanceError } from './errorHelpers';
+import { isInsufficientBalanceOrAllowanceCode } from './errorHelpers';
 import TelegramNotifier from '../services/telegramNotifier';
 import { checkMarketPositionLimit, checkMarketEndDate } from './portfolioManager';
+import type createClobClient from './createClobClient';
+
+/**
+ * The authenticated client returned by createClobClient(). @polymarket/client's
+ * SecureClient is a large structural type with ~60 action-bound methods whose
+ * generic parameters are inferred, not meant to be written by hand — deriving
+ * the alias from createClobClient's own return type keeps it in sync.
+ */
+type SecureClientType = Awaited<ReturnType<typeof createClobClient>>;
 
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 const COPY_STRATEGY_CONFIG = ENV.COPY_STRATEGY_CONFIG;
@@ -22,19 +33,66 @@ const COPY_PERCENTAGE = ENV.COPY_PERCENTAGE;
  * synthetic success response so downstream bookkeeping (position tracking,
  * botExcutedTime, Telegram notifications) still runs against realistic data,
  * without placing any real order or spending real funds.
+ *
+ * The synthetic dry-run response is a real `AcceptedOrderResponse` (`ok: true`
+ * plus every field of that type) so that all downstream handling — `resp.ok`,
+ * `resp.transactionsHashes[0]` — behaves identically whether or not DRY_RUN is
+ * on. The return type is pinned to `OrderResponse` so the compiler enforces
+ * that: `AcceptedOrderResponse`'s string fields are branded (`OrderId`,
+ * `DecimalString`, `TxHash`), so the placeholders need casts, but pinning the
+ * type guarantees no field of the real response is missing from the fake one.
+ *
+ * `orderType: OrderType.FOK` is passed explicitly. @polymarket/client defaults
+ * market orders to FAK (fill-and-kill / partial fills allowed), but the retry
+ * loops below decrement `remaining` by the FULL requested amount on any
+ * `ok: true` response, which is only sound under fill-or-kill semantics. This
+ * also preserves the exact behaviour of the previous clob-client-v2 call,
+ * `postOrder(signedOrder, OrderType.FOK)`.
  */
 const submitOrder = async (
-    clobClient: ClobClient,
-    orderArgs: { side: Side; tokenID: string; amount: number; price: number }
-) => {
+    client: SecureClientType,
+    orderArgs: { side: OrderSide; tokenID: string; amount: number; price: number }
+): Promise<OrderResponse> => {
     if (DRY_RUN) {
         Logger.info(
             `🧪 [DRY_RUN] Would submit ${orderArgs.side} order: $${orderArgs.amount.toFixed(2)} @ $${orderArgs.price} (token ${orderArgs.tokenID})`
         );
-        return { success: true, transactionHash: 'DRY_RUN_NO_TX' };
+        const dryRunResponse: AcceptedOrderResponse = {
+            ok: true,
+            orderId: 'DRY_RUN_NO_ID' as AcceptedOrderResponse['orderId'],
+            status: OrderPostStatus.MATCHED,
+            makingAmount: String(orderArgs.amount) as AcceptedOrderResponse['makingAmount'],
+            takingAmount: String(
+                orderArgs.amount / orderArgs.price
+            ) as AcceptedOrderResponse['takingAmount'],
+            transactionsHashes: [
+                'DRY_RUN_NO_TX' as AcceptedOrderResponse['transactionsHashes'][number],
+            ],
+            tradeIds: [],
+        };
+        return dryRunResponse;
     }
-    const signedOrder = await clobClient.createMarketOrder(orderArgs);
-    return clobClient.postOrder(signedOrder, OrderType.FOK);
+
+    if (orderArgs.side === OrderSide.BUY) {
+        return client.placeMarketOrder({
+            tokenId: orderArgs.tokenID,
+            side: OrderSide.BUY,
+            amount: orderArgs.amount,
+            maxPrice: orderArgs.price,
+            orderType: OrderType.FOK,
+        });
+    }
+
+    // SELL orders take `shares` (token quantity), not a dollar `amount` —
+    // orderArgs.amount is already a token count at every SELL call site in
+    // this file (the merge and sell branches), matching this distinction.
+    return client.placeMarketOrder({
+        tokenId: orderArgs.tokenID,
+        side: OrderSide.SELL,
+        shares: orderArgs.amount,
+        minPrice: orderArgs.price,
+        orderType: OrderType.FOK,
+    });
 };
 
 // Polymarket minimum order sizes
@@ -42,7 +100,7 @@ const MIN_ORDER_SIZE_USD = 1.0; // Minimum order size in USD for BUY orders
 const MIN_ORDER_SIZE_TOKENS = 1.0; // Minimum order size in tokens for SELL/MERGE orders
 
 const postOrder = async (
-    clobClient: ClobClient,
+    client: SecureClientType,
     condition: string,
     my_position: UserPositionInterface | undefined,
     user_position: UserPositionInterface | undefined,
@@ -74,7 +132,7 @@ const postOrder = async (
         let retry = 0;
         let abortDueToFunds = false;
         while (remaining > 0 && retry < RETRY_LIMIT) {
-            const orderBook = await clobClient.getOrderBook(trade.asset);
+            const orderBook = await client.fetchOrderBook({ assetId: trade.asset });
             if (!orderBook.bids || orderBook.bids.length === 0) {
                 Logger.warning('No bids available in order book');
                 await UserActivity.updateOne({ _id: trade._id }, { bot: true });
@@ -94,21 +152,21 @@ const postOrder = async (
             let order_arges;
             if (remaining <= parseFloat(maxPriceBid.size)) {
                 order_arges = {
-                    side: Side.SELL,
+                    side: OrderSide.SELL,
                     tokenID: my_position.asset,
                     amount: remaining,
                     price: parseFloat(maxPriceBid.price),
                 };
             } else {
                 order_arges = {
-                    side: Side.SELL,
+                    side: OrderSide.SELL,
                     tokenID: my_position.asset,
                     amount: parseFloat(maxPriceBid.size),
                     price: parseFloat(maxPriceBid.price),
                 };
             }
-            const resp = await submitOrder(clobClient, order_arges);
-            if (resp.success === true) {
+            const resp = await submitOrder(client, order_arges);
+            if (resp.ok === true) {
                 retry = 0;
                 Logger.orderResult(
                     true,
@@ -126,7 +184,7 @@ const postOrder = async (
                     success: true,
                     traderAmount: trade.usdcSize,
                     yourBalance: my_balance,
-                    transactionHash: resp.transactionHash,
+                    transactionHash: resp.transactionsHashes[0] ?? undefined,
                 }).catch((err) => {
                     const errorMsg = err instanceof Error ? err.message : String(err);
                     Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
@@ -134,12 +192,12 @@ const postOrder = async (
 
                 remaining -= order_arges.amount;
             } else {
-                const errorMessage = extractErrorMessage(resp);
+                const errorMessage = resp.message;
 
                 // Log full response for debugging
                 Logger.warning(`Full API Response: ${JSON.stringify(resp, null, 2)}`);
 
-                if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
+                if (isInsufficientBalanceOrAllowanceCode(resp.code)) {
                     abortDueToFunds = true;
                     Logger.warning(
                         `Order rejected: ${errorMessage || 'Insufficient balance or allowance'}`
@@ -292,7 +350,7 @@ const postOrder = async (
         let totalBoughtTokens = 0; // Track total tokens bought for this trade
 
         while (remaining > 0 && retry < RETRY_LIMIT) {
-            const orderBook = await clobClient.getOrderBook(trade.asset);
+            const orderBook = await client.fetchOrderBook({ assetId: trade.asset });
             if (!orderBook.asks || orderBook.asks.length === 0) {
                 Logger.warning('No asks available in order book');
                 await UserActivity.updateOne({ _id: trade._id }, { bot: true });
@@ -331,7 +389,7 @@ const postOrder = async (
             const orderSize = Math.min(remaining, maxOrderSize);
 
             const order_arges = {
-                side: Side.BUY,
+                side: OrderSide.BUY,
                 tokenID: trade.asset,
                 amount: orderSize,
                 price: parseFloat(minPriceAsk.price),
@@ -340,8 +398,8 @@ const postOrder = async (
             Logger.info(
                 `Creating order: $${orderSize.toFixed(2)} @ $${minPriceAsk.price} (Balance: $${my_balance.toFixed(2)})`
             );
-            const resp = await submitOrder(clobClient, order_arges);
-            if (resp.success === true) {
+            const resp = await submitOrder(client, order_arges);
+            if (resp.ok === true) {
                 retry = 0;
                 const tokensBought = order_arges.amount / order_arges.price;
                 totalBoughtTokens += tokensBought;
@@ -361,7 +419,7 @@ const postOrder = async (
                     success: true,
                     traderAmount: trade.usdcSize,
                     yourBalance: my_balance,
-                    transactionHash: resp.transactionHash,
+                    transactionHash: resp.transactionsHashes[0] ?? undefined,
                 }).catch((err) => {
                     const errorMsg = err instanceof Error ? err.message : String(err);
                     Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
@@ -369,12 +427,12 @@ const postOrder = async (
 
                 remaining -= order_arges.amount;
             } else {
-                const errorMessage = extractErrorMessage(resp);
+                const errorMessage = resp.message;
 
                 // Log full response for debugging
                 Logger.warning(`Full API Response: ${JSON.stringify(resp, null, 2)}`);
 
-                if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
+                if (isInsufficientBalanceOrAllowanceCode(resp.code)) {
                     abortDueToFunds = true;
                     Logger.warning(
                         `Order rejected: ${errorMessage || 'Insufficient balance or allowance'}`
@@ -554,7 +612,7 @@ const postOrder = async (
         let totalSoldTokens = 0; // Track total tokens sold
 
         while (remaining > 0 && retry < RETRY_LIMIT) {
-            const orderBook = await clobClient.getOrderBook(trade.asset);
+            const orderBook = await client.fetchOrderBook({ assetId: trade.asset });
             if (!orderBook.bids || orderBook.bids.length === 0) {
                 await UserActivity.updateOne({ _id: trade._id }, { bot: true });
                 Logger.warning('No bids available in order book');
@@ -593,13 +651,13 @@ const postOrder = async (
             }
 
             const order_arges = {
-                side: Side.SELL,
+                side: OrderSide.SELL,
                 tokenID: trade.asset,
                 amount: sellAmount,
                 price: parseFloat(maxPriceBid.price),
             };
-            const resp = await submitOrder(clobClient, order_arges);
-            if (resp.success === true) {
+            const resp = await submitOrder(client, order_arges);
+            if (resp.ok === true) {
                 retry = 0;
                 totalSoldTokens += order_arges.amount;
                 Logger.orderResult(
@@ -618,7 +676,7 @@ const postOrder = async (
                     success: true,
                     traderAmount: trade.usdcSize,
                     yourBalance: my_balance,
-                    transactionHash: resp.transactionHash,
+                    transactionHash: resp.transactionsHashes[0] ?? undefined,
                 }).catch((err) => {
                     const errorMsg = err instanceof Error ? err.message : String(err);
                     Logger.error(`Failed to send Telegram notification: ${errorMsg}`);
@@ -626,12 +684,12 @@ const postOrder = async (
 
                 remaining -= order_arges.amount;
             } else {
-                const errorMessage = extractErrorMessage(resp);
+                const errorMessage = resp.message;
 
                 // Log full response for debugging
                 Logger.warning(`Full API Response: ${JSON.stringify(resp, null, 2)}`);
 
-                if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
+                if (isInsufficientBalanceOrAllowanceCode(resp.code)) {
                     abortDueToFunds = true;
                     Logger.warning(
                         `Order rejected: ${errorMessage || 'Insufficient balance or allowance'}`
