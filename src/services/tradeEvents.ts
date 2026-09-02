@@ -10,6 +10,9 @@ import { EventEmitter } from 'events';
 export interface NewTradePayload {
     id: string;
     userAddress: string;
+    /** Date.now() at the moment the monitor saved the trade — lets the
+     * executor measure detection-to-execution latency. */
+    detectedAt: number;
 }
 
 class TradeEvents extends EventEmitter {}

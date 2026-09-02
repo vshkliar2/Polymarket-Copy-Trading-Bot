@@ -51,6 +51,11 @@ const refreshUserActivityModels = async (): Promise<void> => {
 
 interface TradeWithUser extends UserActivityInterface {
     userAddress: string;
+    /** When this trade was first detected/saved by a monitor. Falls back to
+     * fetch time for trades picked up by the safety-net sweep, which has no
+     * visibility into the original detection moment. Used only for the
+     * processing-latency log in executeSingleTrade. */
+    detectedAt: number;
 }
 
 interface AggregatedTrade {
@@ -86,6 +91,12 @@ const readTempTrades = async (): Promise<TradeWithUser[]> => {
             return trades.map((trade) => ({
                 ...(trade.toObject() as UserActivityInterface),
                 userAddress: address,
+                // The safety-net sweep has no record of when the monitor
+                // originally detected this trade, so it stamps "now" —
+                // this undercounts latency for these trades, but keeps the
+                // field meaningful for the (much more common) event-driven
+                // path in fetchTradeById below.
+                detectedAt: Date.now(),
             }));
         })
     );
@@ -102,6 +113,7 @@ const readTempTrades = async (): Promise<TradeWithUser[]> => {
 const fetchTradeById = async ({
     id,
     userAddress,
+    detectedAt,
 }: NewTradePayload): Promise<TradeWithUser | null> => {
     const modelConfig = userActivityModels.find((m) => m.address === userAddress);
     if (!modelConfig) {
@@ -126,6 +138,7 @@ const fetchTradeById = async ({
     return {
         ...(trade.toObject() as UserActivityInterface),
         userAddress,
+        detectedAt,
     };
 };
 
@@ -257,6 +270,9 @@ const executeSingleTrade = async (clobClient: ClobClient, trade: TradeWithUser):
         return;
     }
 
+    const claimedAt = Date.now();
+    Logger.info(`⏱️  Pickup latency: ${claimedAt - trade.detectedAt}ms since detection`);
+
     Logger.trade(trade.userAddress, trade.side ?? 'UNKNOWN', {
         asset: trade.asset,
         side: trade.side,
@@ -284,6 +300,7 @@ const executeSingleTrade = async (clobClient: ClobClient, trade: TradeWithUser):
         trade.userAddress
     );
 
+    Logger.info(`⏱️  Total processing time: ${Date.now() - trade.detectedAt}ms since detection`);
     Logger.separator();
 };
 

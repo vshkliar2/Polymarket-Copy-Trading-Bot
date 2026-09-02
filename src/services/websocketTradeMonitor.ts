@@ -211,7 +211,7 @@ const processNewTrade = async (
 
     await newActivity.save();
     Logger.info(`🔔 New trade detected for ${formatAddress(address)}`);
-    emitNewTrade({ id: String(newActivity._id), userAddress: address });
+    emitNewTrade({ id: String(newActivity._id), userAddress: address, detectedAt: Date.now() });
 };
 
 /**
