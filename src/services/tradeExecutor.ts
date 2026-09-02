@@ -325,9 +325,27 @@ const executeSingleTrade = async (
         // instead of permanently stranding the trade, and swallow the error
         // here so one failing trade doesn't abort the rest of the batch loop
         // in doTrading/processTradeBatch.
+        //
+        // Guard the reset with botExcutedTime: 1 (the exact state our own
+        // claimTrade() put this trade in) rather than an unconditional
+        // update by _id alone: removeTrader() (trackedTraders.ts) drains a
+        // trader's remaining trades via updateMany({bot: false}, {bot: true,
+        // botExcutedTime: 999}) — and a claimed-but-not-yet-executed trade
+        // still has bot: false (claimTrade only ever touches botExcutedTime),
+        // so it matches that drain's filter. If a removeTrader drain lands
+        // between this throw and this reset, an unconditional update would
+        // stomp its {bot: true, botExcutedTime: 999} back down to
+        // botExcutedTime: 0, producing an inconsistent record. Scoping the
+        // filter to botExcutedTime: 1 means the reset only fires if nothing
+        // else already moved this trade out of the state this call frame
+        // itself put it in — the same "only transition state this call
+        // frame owns" property claimTrade()'s findOneAndUpdate relies on.
         Logger.error(`Error executing trade for ${trade.userAddress}: ${formatError(error)}`);
         const UserActivity = getUserActivityModel(trade.userAddress);
-        await UserActivity.updateOne({ _id: trade._id }, { $set: { botExcutedTime: 0 } });
+        await UserActivity.updateOne(
+            { _id: trade._id, botExcutedTime: 1 },
+            { $set: { botExcutedTime: 0 } }
+        );
         return;
     }
 
@@ -408,12 +426,26 @@ const doAggregatedTrading = async (
             // (not 999 — that means "historical/skipped forever") so the
             // safety-net sweep or a future event can retry the whole group,
             // and continue the aggregatedTrades loop instead of aborting it.
+            //
+            // Guard each reset with botExcutedTime: 1 (the exact state the
+            // claim loop above put each trade in), not an unconditional
+            // update by _id alone — see executeSingleTrade's catch block for
+            // the full reasoning: removeTrader() (trackedTraders.ts) can
+            // drain a claimed-but-not-yet-executed trade (still bot: false)
+            // via updateMany({bot: false}, {bot: true, botExcutedTime: 999})
+            // concurrently with this catch running. Scoping to
+            // botExcutedTime: 1 ensures this reset only fires for trades
+            // still in the state this call frame's own claim loop put them
+            // in, so it can't stomp a newer state written by something else.
             Logger.error(
                 `Error executing aggregated trade for ${agg.userAddress}: ${formatError(error)}`
             );
             for (const trade of agg.trades) {
                 const UserActivity = getUserActivityModel(trade.userAddress);
-                await UserActivity.updateOne({ _id: trade._id }, { $set: { botExcutedTime: 0 } });
+                await UserActivity.updateOne(
+                    { _id: trade._id, botExcutedTime: 1 },
+                    { $set: { botExcutedTime: 0 } }
+                );
             }
             continue;
         }
