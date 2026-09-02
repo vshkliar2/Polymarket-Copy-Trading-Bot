@@ -129,9 +129,14 @@ uploads the public key to the instance's metadata — no manual key setup.
 
 ## 6. Install Node.js, PM2, and clone the repo (on the VM)
 
+> The bot requires Node.js **>=24** (see `engines.node` in `package.json`).
+> This isn't an arbitrary bump — it's required by the `@polymarket/client`
+> SDK dependency, which replaced the old `@polymarket/clob-client-v2`
+> package. Installing an older Node major version here will not work.
+
 ```bash
 sudo apt-get update && sudo apt-get upgrade -y
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs git
 sudo npm install -g pm2
 
