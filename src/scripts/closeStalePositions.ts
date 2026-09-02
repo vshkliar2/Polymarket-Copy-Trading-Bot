@@ -1,8 +1,18 @@
-import { AssetType, ClobClient, OrderType, Side } from '@polymarket/clob-client-v2';
+import { OrderSide, OrderType } from '@polymarket/client';
+import { AssetType } from '@polymarket/bindings/clob';
 import { ENV } from '../config/env';
 import createClobClient from '../utils/createClobClient';
 import fetchData from '../utils/fetchData';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
+import { isInsufficientBalanceOrAllowanceCode } from '../utils/errorHelpers';
+
+/**
+ * The authenticated client returned by createClobClient(). @polymarket/client's
+ * SecureClient is a large structural type with ~60 action-bound methods whose
+ * generic parameters are inferred, not meant to be written by hand — deriving
+ * the alias from createClobClient's own return type keeps it in sync.
+ */
+type SecureClientType = Awaited<ReturnType<typeof createClobClient>>;
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const USER_ADDRESSES = ENV.USER_ADDRESSES;
@@ -31,58 +41,11 @@ interface SellResult {
     remainingTokens: number;
 }
 
-const extractOrderError = (response: unknown): string | undefined => {
-    if (!response) {
-        return undefined;
-    }
-
-    if (typeof response === 'string') {
-        return response;
-    }
-
-    if (typeof response === 'object') {
-        const data = response as Record<string, unknown>;
-
-        const directError = data.error;
-        if (typeof directError === 'string') {
-            return directError;
-        }
-
-        if (typeof directError === 'object' && directError !== null) {
-            const nested = directError as Record<string, unknown>;
-            if (typeof nested.error === 'string') {
-                return nested.error;
-            }
-            if (typeof nested.message === 'string') {
-                return nested.message;
-            }
-        }
-
-        if (typeof data.errorMsg === 'string') {
-            return data.errorMsg;
-        }
-
-        if (typeof data.message === 'string') {
-            return data.message;
-        }
-    }
-
-    return undefined;
-};
-
-const isInsufficientBalanceOrAllowanceError = (message: string | undefined): boolean => {
-    if (!message) {
-        return false;
-    }
-    const lower = message.toLowerCase();
-    return lower.includes('not enough balance') || lower.includes('allowance');
-};
-
-const updatePolymarketCache = async (clobClient: ClobClient, tokenId: string) => {
+const updatePolymarketCache = async (clobClient: SecureClientType, tokenId: string) => {
     try {
         await clobClient.updateBalanceAllowance({
-            asset_type: AssetType.CONDITIONAL,
-            token_id: tokenId,
+            assetType: AssetType.CONDITIONAL,
+            assetId: tokenId,
         });
     } catch (error) {
         console.log(`⚠️  Failed to refresh balance cache for ${tokenId}:`, error);
@@ -90,7 +53,7 @@ const updatePolymarketCache = async (clobClient: ClobClient, tokenId: string) =>
 };
 
 const sellEntirePosition = async (
-    clobClient: ClobClient,
+    clobClient: SecureClientType,
     position: Position
 ): Promise<SellResult> => {
     let remaining = position.size;
@@ -108,7 +71,7 @@ const sellEntirePosition = async (
     await updatePolymarketCache(clobClient, position.asset);
 
     while (remaining >= MIN_SELL_TOKENS && attempts < RETRY_LIMIT) {
-        const orderBook = await clobClient.getOrderBook(position.asset);
+        const orderBook = await clobClient.fetchOrderBook({ assetId: position.asset });
 
         if (!orderBook.bids || orderBook.bids.length === 0) {
             console.log('   ❌ Order book has no bids – liquidity unavailable');
@@ -136,18 +99,16 @@ const sellEntirePosition = async (
             break;
         }
 
-        const orderArgs = {
-            side: Side.SELL,
-            tokenID: position.asset,
-            amount: sellAmount,
-            price: bidPrice,
-        };
-
         try {
-            const signedOrder = await clobClient.createMarketOrder(orderArgs);
-            const resp = await clobClient.postOrder(signedOrder, OrderType.FOK);
+            const resp = await clobClient.placeMarketOrder({
+                tokenId: position.asset,
+                side: OrderSide.SELL,
+                shares: sellAmount,
+                minPrice: bidPrice,
+                orderType: OrderType.FOK,
+            });
 
-            if (resp.success === true) {
+            if (resp.ok === true) {
                 const tradeValue = sellAmount * bidPrice;
                 soldTokens += sellAmount;
                 proceedsUsd += tradeValue;
@@ -158,9 +119,9 @@ const sellEntirePosition = async (
                 );
             } else {
                 attempts += 1;
-                const errorMessage = extractOrderError(resp);
+                const errorMessage = resp.message;
 
-                if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
+                if (isInsufficientBalanceOrAllowanceCode(resp.code)) {
                     console.log(
                         `   ❌ Order rejected: ${errorMessage ?? 'balance/allowance issue'}`
                     );
