@@ -74,3 +74,6 @@ docker-compose.override.yml
 
 # IDE
 *.code-workspace
+
+# Subagent-driven-development scratch workspace (ledgers, briefs, reports)
+.superpowers/
