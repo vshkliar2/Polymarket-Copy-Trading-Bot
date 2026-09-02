@@ -13,6 +13,7 @@ import {
     buildTraderModelMap,
     TraderModelConfig,
 } from './trackedTraders';
+import { emitNewTrade } from './tradeEvents';
 
 const TOO_OLD_TIMESTAMP = ENV.TOO_OLD_TIMESTAMP;
 const FETCH_INTERVAL = ENV.FETCH_INTERVAL;
@@ -194,6 +195,7 @@ const processNewTrade = async (
 
     await newActivity.save();
     Logger.info(`New trade detected for ${formatAddress(address)}`);
+    emitNewTrade({ id: String(newActivity._id), userAddress: address });
 };
 
 /**

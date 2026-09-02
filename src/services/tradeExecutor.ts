@@ -10,6 +10,16 @@ import {
     findPositionByConditionId,
 } from '../utils/positionHelpers';
 import { diffTraderAddresses, getActiveTraderAddresses } from './trackedTraders';
+import { onNewTrade, NewTradePayload } from './tradeEvents';
+import { formatError } from '../utils/errorHelpers';
+
+// Safety-net poll interval: catches anything an event might have missed
+// (a crash between save() and emit, a trade inserted outside the normal
+// monitor path) and drives the trade-aggregation window check, which needs
+// to fire on elapsed time even when no new trade has arrived. Far slower
+// than event-driven execution needs, since it's a backstop, not the
+// primary trigger.
+const SAFETY_NET_POLL_MS = 5000;
 
 const TRADE_AGGREGATION_ENABLED = ENV.TRADE_AGGREGATION_ENABLED;
 const TRADE_AGGREGATION_WINDOW_SECONDS = ENV.TRADE_AGGREGATION_WINDOW_SECONDS;
@@ -81,6 +91,42 @@ const readTempTrades = async (): Promise<TradeWithUser[]> => {
     );
 
     return perTraderTrades.flat();
+};
+
+/**
+ * Fetch a single trade by id, scoped to the trader's own collection, per
+ * the {id, userAddress} payload a 'newTrade' event carries. Still filters
+ * on bot:false/botExcutedTime:0 so a trade already picked up by a prior
+ * safety-net sweep (or already executed) isn't processed twice.
+ */
+const fetchTradeById = async ({
+    id,
+    userAddress,
+}: NewTradePayload): Promise<TradeWithUser | null> => {
+    const modelConfig = userActivityModels.find((m) => m.address === userAddress);
+    if (!modelConfig) {
+        // Trader was removed from tracked_traders between the monitor's
+        // write and this event firing — nothing to do.
+        return null;
+    }
+
+    const trade = await modelConfig.model
+        .findOne({
+            _id: id,
+            type: 'TRADE',
+            bot: false,
+            botExcutedTime: 0,
+        })
+        .exec();
+
+    if (!trade) {
+        return null;
+    }
+
+    return {
+        ...(trade.toObject() as UserActivityInterface),
+        userAddress,
+    };
 };
 
 /**
@@ -184,12 +230,32 @@ const prepareTradeData = async (trade: TradeWithUser) => {
 };
 
 /**
+ * Atomically claim a trade before committing it to a processing path
+ * (buffering for aggregation, or immediate execution). Both the
+ * event-driven fast path and the safety-net sweep can observe the same
+ * bot:false/botExcutedTime:0 document concurrently; only the caller whose
+ * findOneAndUpdate actually matches wins the claim. Returns true if this
+ * call claimed the trade, false if something else already did.
+ */
+const claimTrade = async (trade: TradeWithUser): Promise<boolean> => {
+    const UserActivity = getUserActivityModel(trade.userAddress);
+    const claimed = await UserActivity.findOneAndUpdate(
+        { _id: trade._id, bot: false, botExcutedTime: 0 },
+        { $set: { botExcutedTime: 1 } }
+    ).exec();
+    return claimed !== null;
+};
+
+/**
  * Execute a single trade
  */
 const executeSingleTrade = async (clobClient: ClobClient, trade: TradeWithUser): Promise<void> => {
-    // Mark trade as being processed immediately to prevent duplicate processing
-    const UserActivity = getUserActivityModel(trade.userAddress);
-    await UserActivity.updateOne({ _id: trade._id }, { $set: { botExcutedTime: 1 } });
+    // With both an event-driven path and a safety-net sweep able to observe
+    // the same trade concurrently, claim it atomically first — only the
+    // caller that wins the claim proceeds, avoiding double-execution.
+    if (!(await claimTrade(trade))) {
+        return;
+    }
 
     Logger.trade(trade.userAddress, trade.side ?? 'UNKNOWN', {
         asset: trade.asset,
@@ -290,6 +356,8 @@ const doAggregatedTrading = async (
 // Track if executor should continue running
 let isRunning = true;
 let executorRefreshInterval: NodeJS.Timeout | null = null;
+let safetyNetInterval: NodeJS.Timeout | null = null;
+let idleLogInterval: NodeJS.Timeout | null = null;
 
 /**
  * Stop the trade executor gracefully
@@ -300,7 +368,72 @@ export const stopTradeExecutor = (): void => {
         clearInterval(executorRefreshInterval);
         executorRefreshInterval = null;
     }
+    if (safetyNetInterval) {
+        clearInterval(safetyNetInterval);
+        safetyNetInterval = null;
+    }
+    if (idleLogInterval) {
+        clearInterval(idleLogInterval);
+        idleLogInterval = null;
+    }
     Logger.info('Trade executor shutdown requested...');
+};
+
+/**
+ * Process a batch of already-fetched trades through the existing
+ * aggregation/immediate-execution branching. Shared by both the
+ * event-driven single-trade path and the safety-net sweep, so the
+ * execution logic itself doesn't change based on how a trade was found.
+ */
+const processTradeBatch = async (
+    clobClient: ClobClient,
+    trades: TradeWithUser[]
+): Promise<void> => {
+    if (TRADE_AGGREGATION_ENABLED) {
+        if (trades.length > 0) {
+            Logger.clearLine();
+            Logger.info(`📥 ${trades.length} new trade${trades.length > 1 ? 's' : ''} detected`);
+
+            for (const trade of trades) {
+                // Only aggregate BUY trades below minimum threshold
+                if (trade.side === 'BUY' && trade.usdcSize < TRADE_AGGREGATION_MIN_TOTAL_USD) {
+                    // Claim before buffering: the buffer is in-process
+                    // state, not itself a guard against the same trade
+                    // being fetched and buffered twice by concurrent
+                    // triggers (an event + the safety-net sweep).
+                    if (!(await claimTrade(trade))) {
+                        continue;
+                    }
+                    Logger.info(
+                        `Adding $${trade.usdcSize.toFixed(2)} ${trade.side} trade to aggregation buffer for ${trade.slug ?? trade.asset}`
+                    );
+                    addToAggregationBuffer(trade);
+                } else {
+                    // Execute large trades immediately (not aggregated)
+                    Logger.clearLine();
+                    Logger.header(`⚡ IMMEDIATE TRADE (above threshold)`);
+                    await doTrading(clobClient, [trade]);
+                }
+            }
+        }
+
+        // Check for ready aggregated trades — must happen even when no new
+        // trade arrived, since a buffered group's time window can expire
+        // on its own. This is why the safety-net interval exists.
+        const readyAggregations = getReadyAggregatedTrades();
+        if (readyAggregations.length > 0) {
+            Logger.clearLine();
+            Logger.header(
+                `⚡ ${readyAggregations.length} AGGREGATED TRADE${readyAggregations.length > 1 ? 'S' : ''} READY`
+            );
+            await doAggregatedTrading(clobClient, readyAggregations);
+        }
+    } else if (trades.length > 0) {
+        // Original non-aggregation logic
+        Logger.clearLine();
+        Logger.header(`⚡ ${trades.length} NEW TRADE${trades.length > 1 ? 'S' : ''} TO COPY`);
+        await doTrading(clobClient, trades);
+    }
 };
 
 /**
@@ -324,85 +457,48 @@ const tradeExecutor = async (clobClient: ClobClient): Promise<void> => {
         );
     }
 
-    let lastCheck = Date.now();
-    while (isRunning) {
-        const trades = await readTempTrades();
-
-        if (TRADE_AGGREGATION_ENABLED) {
-            // Process with aggregation logic
-            if (trades.length > 0) {
-                Logger.clearLine();
-                Logger.info(
-                    `📥 ${trades.length} new trade${trades.length > 1 ? 's' : ''} detected`
-                );
-
-                // Add trades to aggregation buffer
-                for (const trade of trades) {
-                    // Only aggregate BUY trades below minimum threshold
-                    if (trade.side === 'BUY' && trade.usdcSize < TRADE_AGGREGATION_MIN_TOTAL_USD) {
-                        Logger.info(
-                            `Adding $${trade.usdcSize.toFixed(2)} ${trade.side} trade to aggregation buffer for ${trade.slug ?? trade.asset}`
-                        );
-                        addToAggregationBuffer(trade);
-                    } else {
-                        // Execute large trades immediately (not aggregated)
-                        Logger.clearLine();
-                        Logger.header(`⚡ IMMEDIATE TRADE (above threshold)`);
-                        await doTrading(clobClient, [trade]);
-                    }
+    // Fast path: a monitor emits 'newTrade' the instant it writes a trade to
+    // Mongo. React immediately with a targeted single-document fetch instead
+    // of waiting for the next safety-net sweep.
+    onNewTrade((payload) => {
+        if (!isRunning) return;
+        fetchTradeById(payload)
+            .then(async (trade) => {
+                if (trade) {
+                    await processTradeBatch(clobClient, [trade]);
                 }
-                lastCheck = Date.now();
-            }
+            })
+            .catch((error) => {
+                Logger.error(`Error processing new-trade event: ${formatError(error)}`);
+            });
+    });
 
-            // Check for ready aggregated trades
-            const readyAggregations = getReadyAggregatedTrades();
-            if (readyAggregations.length > 0) {
-                Logger.clearLine();
-                Logger.header(
-                    `⚡ ${readyAggregations.length} AGGREGATED TRADE${readyAggregations.length > 1 ? 'S' : ''} READY`
-                );
-                await doAggregatedTrading(clobClient, readyAggregations);
-                lastCheck = Date.now();
-            }
+    // Safety net: catches anything an event might have missed (a crash
+    // between save() and emit, a trade inserted outside the normal monitor
+    // path) and drives the aggregation-window-expiry check, which needs to
+    // fire on elapsed time even with zero new trades. Far slower than
+    // event-driven execution needs, since it's a backstop, not the primary
+    // trigger.
+    safetyNetInterval = setInterval(() => {
+        readTempTrades()
+            .then((trades) => processTradeBatch(clobClient, trades))
+            .catch((error) => {
+                Logger.error(`Error in safety-net sweep: ${formatError(error)}`);
+            });
+    }, SAFETY_NET_POLL_MS);
 
-            // Update waiting message
-            if (trades.length === 0 && readyAggregations.length === 0) {
-                if (Date.now() - lastCheck > 300) {
-                    const bufferedCount = tradeAggregationBuffer.size;
-                    if (bufferedCount > 0) {
-                        Logger.waiting(
-                            userActivityModels.length,
-                            `${bufferedCount} trade group(s) pending`
-                        );
-                    } else {
-                        Logger.waiting(userActivityModels.length);
-                    }
-                    lastCheck = Date.now();
-                }
-            }
-        } else {
-            // Original non-aggregation logic
-            if (trades.length > 0) {
-                Logger.clearLine();
-                Logger.header(
-                    `⚡ ${trades.length} NEW TRADE${trades.length > 1 ? 'S' : ''} TO COPY`
-                );
-                await doTrading(clobClient, trades);
-                lastCheck = Date.now();
-            } else {
-                // Update waiting message every 300ms for smooth animation
-                if (Date.now() - lastCheck > 300) {
-                    Logger.waiting(userActivityModels.length);
-                    lastCheck = Date.now();
-                }
-            }
-        }
-
-        if (!isRunning) break;
-        await new Promise((resolve) => setTimeout(resolve, 300));
-    }
-
-    Logger.info('Trade executor stopped');
+    // Idle heartbeat: a real, newline-terminated log line (not the old
+    // \r-based spinner, which renders as garbled control characters in
+    // file-based logs like PM2's) so an operator watching logs can tell the
+    // executor is alive during quiet periods, without spamming every tick.
+    idleLogInterval = setInterval(() => {
+        const bufferedCount = tradeAggregationBuffer.size;
+        Logger.info(
+            bufferedCount > 0
+                ? `Waiting for trades from ${userActivityModels.length} trader(s)... (${bufferedCount} trade group(s) pending)`
+                : `Waiting for trades from ${userActivityModels.length} trader(s)...`
+        );
+    }, 60_000);
 };
 
 export default tradeExecutor;
