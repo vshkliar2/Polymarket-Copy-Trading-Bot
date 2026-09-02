@@ -7,7 +7,7 @@
 **Automated copy trading (copytrading) bot for Polymarket that mirrors trades from top performers with intelligent position sizing and real-time execution.**
 
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8.9-green.svg)](https://www.mongodb.com/)
 [![GitHub Stars](https://img.shields.io/github/stars/earthskyorg/polymarket-copy-trading-bot?style=social)](https://github.com/earthskyorg/polymarket-copy-trading-bot)
@@ -125,7 +125,7 @@ This Polymarket copy trading bot provides enterprise-grade features for automate
 
 Before you begin, ensure you have the following:
 
-- **Node.js** v18.0.0 or higher
+- **Node.js** v24.0.0 or higher
 - **MongoDB Database** ([MongoDB Atlas](https://www.mongodb.com/cloud/atlas/register) free tier recommended)
 - **Polygon Wallet** with USDC and POL/MATIC for gas fees
 - **RPC Endpoint** ([Infura](https://infura.io) or [Alchemy](https://www.alchemy.com) free tier)
@@ -249,7 +249,7 @@ Yes! This is a completely free and open-source Polymarket copy trading bot. The 
 ### What are the requirements to run this Polymarket automated trading bot?
 
 You need:
-- Node.js v18.0.0 or higher
+- Node.js v24.0.0 or higher
 - MongoDB database (free tier available on MongoDB Atlas)
 - Polygon wallet with USDC and POL/MATIC for gas fees
 - RPC endpoint (free tier available on Infura or Alchemy)
