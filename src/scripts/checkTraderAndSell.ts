@@ -1,19 +1,18 @@
-import { ethers } from 'ethers';
-import {
-    AssetType,
-    ClobClient,
-    OrderType,
-    Side,
-    SignatureTypeV2,
-} from '@polymarket/clob-client-v2';
+import { OrderSide, OrderType } from '@polymarket/client';
+import { AssetType } from '@polymarket/bindings/clob';
 import { ENV } from '../config/env';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
+import createClobClient from '../utils/createClobClient';
+
+/**
+ * The authenticated client returned by createClobClient(). @polymarket/client's
+ * SecureClient is a large structural type with ~60 action-bound methods whose
+ * generic parameters are inferred, not meant to be written by hand — deriving
+ * the alias from createClobClient's own return type keeps it in sync.
+ */
+type SecureClientType = Awaited<ReturnType<typeof createClobClient>>;
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
-const PRIVATE_KEY = ENV.PRIVATE_KEY;
-const CLOB_HTTP_URL = ENV.CLOB_HTTP_URL;
-const RPC_URL = ENV.RPC_URL;
-const POLYGON_CHAIN_ID = 137;
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 
 // ==================== CONFIGURATION ====================
@@ -33,60 +32,6 @@ interface Position {
     outcome: string;
 }
 
-const isGnosisSafe = async (
-    address: string,
-    provider: ethers.providers.JsonRpcProvider
-): Promise<boolean> => {
-    try {
-        const code = await provider.getCode(address);
-        return code !== '0x';
-    } catch (error) {
-        console.error(`Error checking wallet type: ${error}`);
-        return false;
-    }
-};
-
-const createClobClient = async (
-    provider: ethers.providers.JsonRpcProvider
-): Promise<ClobClient> => {
-    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    const isProxySafe = await isGnosisSafe(PROXY_WALLET, provider);
-
-    console.log(`Wallet type: ${isProxySafe ? 'Gnosis Safe' : 'EOA'}`);
-    const signatureType = isProxySafe ? SignatureTypeV2.POLY_GNOSIS_SAFE : SignatureTypeV2.EOA;
-
-    const originalConsoleLog = console.log;
-    const originalConsoleError = console.error;
-    console.log = function () {};
-    console.error = function () {};
-
-    // V2 client uses options object
-    let clobClient = new ClobClient({
-        host: CLOB_HTTP_URL,
-        chain: POLYGON_CHAIN_ID,
-        signer: wallet,
-        signatureType,
-        ...(isProxySafe && { funderAddress: PROXY_WALLET }),
-    });
-
-    // V2 uses createOrDeriveApiKey()
-    const creds = await clobClient.createOrDeriveApiKey();
-
-    clobClient = new ClobClient({
-        host: CLOB_HTTP_URL,
-        chain: POLYGON_CHAIN_ID,
-        signer: wallet,
-        creds,
-        signatureType,
-        ...(isProxySafe && { funderAddress: PROXY_WALLET }),
-    });
-
-    console.log = originalConsoleLog;
-    console.error = originalConsoleError;
-
-    return clobClient;
-};
-
 const fetchPositions = async (walletAddress: string): Promise<Position[]> => {
     const url = `https://data-api.polymarket.com/positions?user=${walletAddress}`;
     const response = await fetch(url);
@@ -100,12 +45,12 @@ const findMatchingPosition = (positions: Position[], searchQuery: string): Posit
     return positions.find((pos) => pos.title.toLowerCase().includes(searchQuery.toLowerCase()));
 };
 
-const updatePolymarketCache = async (clobClient: ClobClient, tokenId: string) => {
+const updatePolymarketCache = async (clobClient: SecureClientType, tokenId: string) => {
     try {
         console.log('🔄 Updating Polymarket balance cache for token...');
         const updateParams = {
-            asset_type: AssetType.CONDITIONAL,
-            token_id: tokenId,
+            assetType: AssetType.CONDITIONAL,
+            assetId: tokenId,
         };
 
         await clobClient.updateBalanceAllowance(updateParams);
@@ -115,7 +60,7 @@ const updatePolymarketCache = async (clobClient: ClobClient, tokenId: string) =>
     }
 };
 
-const sellPosition = async (clobClient: ClobClient, position: Position, sellSize: number) => {
+const sellPosition = async (clobClient: SecureClientType, position: Position, sellSize: number) => {
     let remaining = sellSize;
     let retry = 0;
 
@@ -131,7 +76,7 @@ const sellPosition = async (clobClient: ClobClient, position: Position, sellSize
     while (remaining > 0 && retry < RETRY_LIMIT) {
         try {
             // Get current order book
-            const orderBook = await clobClient.getOrderBook(position.asset);
+            const orderBook = await clobClient.fetchOrderBook({ assetId: position.asset });
 
             if (!orderBook.bids || orderBook.bids.length === 0) {
                 console.log('❌ No bids available in order book');
@@ -160,7 +105,7 @@ const sellPosition = async (clobClient: ClobClient, position: Position, sellSize
 
             // Create sell order
             const orderArgs = {
-                side: Side.SELL,
+                side: OrderSide.SELL,
                 tokenID: position.asset,
                 amount: orderAmount,
                 price: parseFloat(maxPriceBid.price),
@@ -168,10 +113,15 @@ const sellPosition = async (clobClient: ClobClient, position: Position, sellSize
 
             console.log(`📤 Selling ${orderAmount.toFixed(2)} tokens at $${orderArgs.price}...`);
 
-            const signedOrder = await clobClient.createMarketOrder(orderArgs);
-            const resp = await clobClient.postOrder(signedOrder, OrderType.FOK);
+            const resp = await clobClient.placeMarketOrder({
+                tokenId: orderArgs.tokenID,
+                side: OrderSide.SELL,
+                shares: orderArgs.amount,
+                minPrice: orderArgs.price,
+                orderType: OrderType.FOK,
+            });
 
-            if (resp.success === true) {
+            if (resp.ok === true) {
                 retry = 0;
                 const soldValue = (orderAmount * orderArgs.price).toFixed(2);
                 console.log(
@@ -184,7 +134,7 @@ const sellPosition = async (clobClient: ClobClient, position: Position, sellSize
                 }
             } else {
                 retry += 1;
-                const errorMsg = extractOrderError(resp);
+                const errorMsg = resp.message;
                 console.log(
                     `⚠️  Order failed (attempt ${retry}/${RETRY_LIMIT})${errorMsg ? `: ${errorMsg}` : ''}`
                 );
@@ -212,45 +162,6 @@ const sellPosition = async (clobClient: ClobClient, position: Position, sellSize
     }
 };
 
-const extractOrderError = (response: unknown): string | undefined => {
-    if (!response) {
-        return undefined;
-    }
-
-    if (typeof response === 'string') {
-        return response;
-    }
-
-    if (typeof response === 'object') {
-        const data = response as Record<string, unknown>;
-
-        const directError = data.error;
-        if (typeof directError === 'string') {
-            return directError;
-        }
-
-        if (typeof directError === 'object' && directError !== null) {
-            const nested = directError as Record<string, unknown>;
-            if (typeof nested.error === 'string') {
-                return nested.error;
-            }
-            if (typeof nested.message === 'string') {
-                return nested.message;
-            }
-        }
-
-        if (typeof data.errorMsg === 'string') {
-            return data.errorMsg;
-        }
-
-        if (typeof data.message === 'string') {
-            return data.message;
-        }
-    }
-
-    return undefined;
-};
-
 async function main() {
     console.log('🔍 Trader Position Check & Sell Script');
     console.log('═══════════════════════════════════════════════\n');
@@ -259,9 +170,8 @@ async function main() {
     console.log(`🔍 Searching for: "${MARKET_SEARCH_QUERY}"\n`);
 
     try {
-        // Create provider and client
-        const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-        const clobClient = await createClobClient(provider);
+        // Create client
+        const clobClient = await createClobClient();
 
         console.log('✅ Connected to Polymarket\n');
 
