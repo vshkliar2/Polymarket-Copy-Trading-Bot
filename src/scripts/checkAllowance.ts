@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { AssetType } from '@polymarket/bindings/clob';
-import { fetchBalanceAllowance } from '@polymarket/client/actions';
+import { fetchBalanceAllowance, updateBalanceAllowance } from '@polymarket/client/actions';
 import { ENV } from '../config/env';
 import createClobClient from '../utils/createClobClient';
 
@@ -62,7 +62,7 @@ const syncPolymarketAllowanceCache = async (decimals: number) => {
         // updateBalanceAllowance is a write/cache-refresh call: it asks
         // Polymarket to re-read the on-chain allowance/balance and update
         // its own cached record, returning that same cached snapshot.
-        const updateResult = await clobClient.updateBalanceAllowance(requestParams);
+        const updateResult = await updateBalanceAllowance(clobClient, requestParams);
         console.log(
             'ℹ  Polymarket cache update response:',
             JSON.stringify(updateResult, (_key, value) =>

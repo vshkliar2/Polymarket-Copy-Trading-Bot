@@ -1,4 +1,5 @@
 import { OrderSide, OrderType } from '@polymarket/client';
+import { updateBalanceAllowance } from '@polymarket/client/actions';
 import { AssetType } from '@polymarket/bindings/clob';
 import { ENV } from '../config/env';
 import fetchData from '../utils/fetchData';
@@ -45,7 +46,7 @@ const updatePolymarketCache = async (clobClient: SecureClientType, tokenId: stri
             assetId: tokenId,
         };
 
-        await clobClient.updateBalanceAllowance(updateParams);
+        await updateBalanceAllowance(clobClient, updateParams);
         console.log('✅ Cache updated successfully\n');
     } catch (error) {
         console.log('⚠️  Warning: Could not update cache:', error);

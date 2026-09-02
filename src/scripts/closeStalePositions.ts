@@ -1,4 +1,5 @@
 import { OrderSide, OrderType } from '@polymarket/client';
+import { updateBalanceAllowance } from '@polymarket/client/actions';
 import { AssetType } from '@polymarket/bindings/clob';
 import { ENV } from '../config/env';
 import createClobClient from '../utils/createClobClient';
@@ -43,7 +44,7 @@ interface SellResult {
 
 const updatePolymarketCache = async (clobClient: SecureClientType, tokenId: string) => {
     try {
-        await clobClient.updateBalanceAllowance({
+        await updateBalanceAllowance(clobClient, {
             assetType: AssetType.CONDITIONAL,
             assetId: tokenId,
         });
