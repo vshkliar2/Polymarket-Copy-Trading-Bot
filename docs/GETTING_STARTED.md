@@ -16,7 +16,7 @@ When a trader you're following makes a bet, the bot:
 
 Before starting, make sure you have:
 
-- [ ] **Computer with Node.js v18+** ([Download here](https://nodejs.org))
+- [ ] **Computer with Node.js v24+** ([Download here](https://nodejs.org))
 - [ ] **Polygon wallet** (MetaMask or any Web3 wallet)
 - [ ] **USDC on Polygon network** (your trading capital)
 - [ ] **POL (MATIC)** (~$5-10 for gas fees)

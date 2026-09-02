@@ -4,7 +4,7 @@ This guide covers deploying the Polymarket Copy Trading Bot to production enviro
 
 ## Prerequisites
 
-- Node.js 18+ or Docker
+- Node.js 24+ or Docker
 - MongoDB database (local or MongoDB Atlas)
 - Polygon wallet with USDC and POL
 - RPC endpoint (Infura, Alchemy, or custom)

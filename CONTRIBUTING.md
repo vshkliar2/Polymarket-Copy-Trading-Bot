@@ -20,7 +20,7 @@ Thank you for your interest in contributing! This document provides guidelines a
 
 ### Prerequisites
 
-- Node.js v18 or higher
+- Node.js v24 or higher
 - npm v9 or higher
 - TypeScript knowledge
 - Understanding of blockchain/trading concepts

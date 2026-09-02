@@ -216,3 +216,56 @@ pm2 startup
 `pm2 startup` prints a `sudo` command tailored to your system — run exactly
 what it outputs. This registers PM2 as a systemd service so the bot restarts
 automatically if the VM reboots.
+
+## 12. Upgrading an existing deployment to Node 24
+
+If this bot is already running on a VM from before this migration, don't just
+`git pull` this code onto it. The `@polymarket/client` SDK (which replaced
+`@polymarket/clob-client-v2`) requires Node **>=24**, and npm's `engines`
+check on an unmet Node version (`EBADENGINE`) is only a warning, not a hard
+failure. That means a routine
+
+```bash
+git pull
+npm install
+npm run build
+pm2 restart polymarket-bot
+```
+
+can appear to succeed end-to-end — install completes, build compiles, PM2
+reports the process as online — while the bot is actually running against an
+SDK it doesn't have the runtime for, and can fail or misbehave only once it
+hits a code path the older Node engine doesn't support. Upgrade Node
+*before* pulling this migration's code.
+
+On the VM:
+
+```bash
+# Check current Node version
+node --version
+
+# If it's below v24, upgrade first:
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt-get install -y nodejs
+node --version   # confirm v24.x
+
+# A major Node version bump can leave PM2's own install stale — reinstall it:
+sudo npm install -g pm2
+pm2 update
+
+# Now pull and deploy as usual
+git pull
+npm install
+npm run build
+pm2 restart polymarket-bot --update-env
+```
+
+The `--update-env` flag on that final restart matters more here than on a
+routine restart: PM2's daemon (`pm2 startup`, from step 11) can otherwise
+keep the environment — including the resolved Node binary path — that was
+captured before the Node upgrade, and silently keep running the bot on the
+old Node binary even after `nodejs` has been upgraded system-wide. If
+`pm2 logs polymarket-bot` after this restart doesn't show a clean startup, or
+`pm2 info polymarket-bot` still points at an unexpected interpreter path,
+run `pm2 delete polymarket-bot` and start it fresh with
+`pm2 start ecosystem.config.js --only polymarket-bot` followed by `pm2 save`.

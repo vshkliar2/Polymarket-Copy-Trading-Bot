@@ -6,7 +6,7 @@ Get your Polymarket copy trading bot running in **5 minutes**. This guide walks 
 
 Before starting, ensure you have:
 
-- ✅ **Node.js v18+** - [Download here](https://nodejs.org/)
+- ✅ **Node.js v24+** - [Download here](https://nodejs.org/)
 - ✅ **MongoDB Database** - [Free tier on MongoDB Atlas](https://www.mongodb.com/cloud/atlas/register)
 - ✅ **Polygon Wallet** - MetaMask or any Web3 wallet
 - ✅ **USDC on Polygon** - For executing trades

@@ -511,7 +511,7 @@ docker-compose logs polymarket
 **Common causes:**
 
 - Build failed → Check Dockerfile and npm install logs
-- Invalid Node.js version → Ensure Node 18+ in Dockerfile
+- Invalid Node.js version → Ensure Node 24+ in Dockerfile
 - Missing dependencies → Try rebuilding: `docker-compose build --no-cache`
 
 ### High CPU/Memory Usage
