@@ -142,6 +142,14 @@ const syncPolymarketAllowanceCache = async (
         };
         let allowanceValue: string | undefined = allowance;
         if (!allowanceValue && balanceResponse.allowances) {
+            // Prefer the legacy v1 exchange address if present, but the CLOB
+            // v2 API keys allowances by whichever operator contracts are
+            // relevant to this account (exchangeV2, negRiskAdapter,
+            // negRiskExchangeV2, and others that may be added later) — none
+            // of which is guaranteed to be POLYMARKET_EXCHANGE. Once
+            // updateBalanceAllowance sets an unlimited approval, every
+            // operator contract carries the same value, so falling back to
+            // "any present allowance" is accurate, not just a guess.
             for (const [address, value] of Object.entries(balanceResponse.allowances)) {
                 if (
                     address.toLowerCase() === POLYMARKET_EXCHANGE_LOWER &&
@@ -149,6 +157,14 @@ const syncPolymarketAllowanceCache = async (
                 ) {
                     allowanceValue = value;
                     break;
+                }
+            }
+            if (!allowanceValue) {
+                const firstValue = Object.values(balanceResponse.allowances).find(
+                    (value) => typeof value === 'string'
+                );
+                if (firstValue) {
+                    allowanceValue = firstValue;
                 }
             }
         }

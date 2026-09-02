@@ -304,6 +304,8 @@ const handleTradeMessage = async (message: Message): Promise<void> => {
     }
 
     matchedMessagesSeen++;
+    // TEMP DEBUG — remove after diagnosing usdcSize:0 bug
+    Logger.warning(`RAW PAYLOAD DEBUG: ${JSON.stringify(trade)}`);
 
     try {
         await processNewTrade(trade, userModel.address, userModel.UserActivity);
