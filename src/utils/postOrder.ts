@@ -171,6 +171,24 @@ const submitOrder = async (
             tokenId: orderArgs.tokenID,
             side: OrderSide.BUY,
             amount: orderArgs.amount,
+            // maxSpend === amount tells the SDK the requested amount should
+            // INCLUDE taker fees, so it resizes the actual share quantity
+            // down to fit the fee inside orderArgs.amount rather than
+            // charging the fee on top of it. This is the actual root cause
+            // of FOK-not-filled BUY failures under @polymarket/client:
+            // orderArgs.price (maxPrice below) is set to the best ask price
+            // itself, leaving zero headroom for any fee — a BUY order sized
+            // at exactly the best ask, with no maxSpend, cannot fill even a
+            // penny of taker fee within that price ceiling, so it is killed
+            // by construction every single time, independent of real market
+            // liquidity or retries. Confirmed against @polymarket/client's
+            // own docs: "Desired USD notional to buy, before market and
+            // builder taker fees... Set maxSpend equal to amount when the
+            // requested amount should include fees." SELL orders have no
+            // equivalent issue — they specify a token `shares` count, and
+            // fees come out of USDC proceeds received, not out of the order
+            // itself.
+            maxSpend: orderArgs.amount,
             maxPrice: orderArgs.price,
             orderType: OrderType.FOK,
         });
