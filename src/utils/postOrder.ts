@@ -1,5 +1,5 @@
-import { OrderSide, OrderType } from '@polymarket/client';
-import { OrderPostStatus } from '@polymarket/bindings/clob';
+import { OrderSide, OrderType, RequestRejectedError } from '@polymarket/client';
+import { OrderPostStatus, OrderResponseErrorCode } from '@polymarket/bindings/clob';
 import type { AcceptedOrderResponse, OrderResponse } from '@polymarket/bindings/clob';
 import { ENV } from '../config/env';
 import { UserActivityInterface, UserPositionInterface } from '../interfaces/User';
@@ -22,6 +22,103 @@ type SecureClientType = Awaited<ReturnType<typeof createClobClient>>;
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 const COPY_STRATEGY_CONFIG = ENV.COPY_STRATEGY_CONFIG;
 const DRY_RUN = ENV.DRY_RUN;
+
+/**
+ * Maps a thrown RequestRejectedError's message text to the matching
+ * OrderResponseErrorCode. @polymarket/bindings' own error-code mapping
+ * (which the SDK uses when a rejection comes back as a normal HTTP 200
+ * response body) keys off this exact message text, so this mirrors that
+ * mapping for the case where the SAME rejection reason instead arrives via
+ * a thrown error (see the comment on placeMarketOrderNormalizingRejection
+ * below for why both paths exist). Order matters: checked top-to-bottom,
+ * first match wins — the insufficient-balance case is a substring match
+ * (mirroring the SDK's own `.includes(...)` check) so it must not be
+ * shadowed by a later exact-match entry.
+ */
+interface RejectedMessageMapping {
+    test: (message: string) => boolean;
+    code: OrderResponseErrorCode;
+}
+
+const REQUEST_REJECTED_MESSAGE_TO_CODE: RejectedMessageMapping[] = [
+    {
+        test: (m) => m.includes('not enough balance / allowance'),
+        code: OrderResponseErrorCode.INSUFFICIENT_BALANCE_OR_ALLOWANCE,
+    },
+    {
+        test: (m) => m === "order couldn't be fully filled. FOK orders are fully filled or killed.",
+        code: OrderResponseErrorCode.FOK_NOT_FILLED,
+    },
+    {
+        test: (m) =>
+            m ===
+            'no orders found to match with FAK order. FAK orders are partially filled or killed if no match is found.',
+        code: OrderResponseErrorCode.FAK_NOT_FILLED,
+    },
+    {
+        test: (m) => m === 'the market is not yet ready to process new orders',
+        code: OrderResponseErrorCode.MARKET_NOT_READY,
+    },
+    { test: (m) => m === 'invalid nonce', code: OrderResponseErrorCode.INVALID_NONCE },
+    { test: (m) => m === 'invalid expiration', code: OrderResponseErrorCode.INVALID_EXPIRATION },
+    {
+        test: (m) => m === 'invalid post-only order: order crosses book',
+        code: OrderResponseErrorCode.POST_ONLY_WOULD_CROSS,
+    },
+    {
+        test: (m) => m === 'post-only mode: only post-only orders and cancels are allowed',
+        code: OrderResponseErrorCode.POST_ONLY_MODE,
+    },
+];
+
+const codeForRejectedRequestMessage = (message: string): OrderResponseErrorCode => {
+    const match = REQUEST_REJECTED_MESSAGE_TO_CODE.find(({ test }) => test(message));
+    return match?.code ?? OrderResponseErrorCode.UNKNOWN;
+};
+
+/**
+ * Calls client.placeMarketOrder(), normalizing a thrown RequestRejectedError
+ * into the same RejectedOrderResponse shape (`{ok: false, code, message}`)
+ * the SDK returns for other rejection reasons.
+ *
+ * Confirmed live (not just from reading the SDK's types): a FOK order that
+ * cannot be fully filled comes back as a THROWN RequestRejectedError, not an
+ * `{ok: false}` response — even though @polymarket/bindings' own response
+ * parser has code that maps this exact rejection message to
+ * OrderResponseErrorCode.FOK_NOT_FILLED for the `{ok:false}` path. Without
+ * this normalization, executeSingleTrade's outer catch treated every
+ * FOK-not-filled rejection as an unretryable error on the FIRST order-book
+ * snapshot, aborting the trade instead of retrying against a fresh order
+ * book like every other rejection reason already does.
+ *
+ * Every other thrown error type (RateLimitError, TransportError,
+ * SigningError, UnexpectedResponseError, UserInputError) is intentionally
+ * left to propagate — those aren't retryable within this loop and are
+ * already handled by tradeExecutor.ts's outer catch (resets botExcutedTime
+ * to 0 so a transient failure gets retried on the next event/sweep, per the
+ * comment there).
+ */
+const placeMarketOrderNormalizingRejection = async (
+    client: SecureClientType,
+    request: Parameters<SecureClientType['placeMarketOrder']>[0]
+): Promise<OrderResponse> => {
+    try {
+        return await client.placeMarketOrder(request);
+    } catch (error) {
+        if (error instanceof RequestRejectedError) {
+            // error.code (when the server sends one) is an arbitrary string,
+            // not guaranteed to be a member of OrderResponseErrorCode — an
+            // unchecked cast risks silently producing a wrong-but-valid-looking
+            // enum value. The message-based mapping below is built directly
+            // from @polymarket/bindings' own internal mapping (see the comment
+            // on REQUEST_REJECTED_MESSAGE_TO_CODE), so it's the more reliable
+            // source of truth here.
+            const code = codeForRejectedRequestMessage(error.message);
+            return { ok: false, code, message: error.message };
+        }
+        throw error;
+    }
+};
 
 /**
  * Submits an order via the CLOB client, unless DRY_RUN is enabled.
@@ -70,10 +167,28 @@ const submitOrder = async (
     }
 
     if (orderArgs.side === OrderSide.BUY) {
-        return client.placeMarketOrder({
+        return placeMarketOrderNormalizingRejection(client, {
             tokenId: orderArgs.tokenID,
             side: OrderSide.BUY,
             amount: orderArgs.amount,
+            // maxSpend === amount tells the SDK the requested amount should
+            // INCLUDE taker fees, so it resizes the actual share quantity
+            // down to fit the fee inside orderArgs.amount rather than
+            // charging the fee on top of it. This is the actual root cause
+            // of FOK-not-filled BUY failures under @polymarket/client:
+            // orderArgs.price (maxPrice below) is set to the best ask price
+            // itself, leaving zero headroom for any fee — a BUY order sized
+            // at exactly the best ask, with no maxSpend, cannot fill even a
+            // penny of taker fee within that price ceiling, so it is killed
+            // by construction every single time, independent of real market
+            // liquidity or retries. Confirmed against @polymarket/client's
+            // own docs: "Desired USD notional to buy, before market and
+            // builder taker fees... Set maxSpend equal to amount when the
+            // requested amount should include fees." SELL orders have no
+            // equivalent issue — they specify a token `shares` count, and
+            // fees come out of USDC proceeds received, not out of the order
+            // itself.
+            maxSpend: orderArgs.amount,
             maxPrice: orderArgs.price,
             orderType: OrderType.FOK,
         });
@@ -82,7 +197,7 @@ const submitOrder = async (
     // SELL orders take `shares` (token quantity), not a dollar `amount` —
     // orderArgs.amount is already a token count at every SELL call site in
     // this file, matching this distinction.
-    return client.placeMarketOrder({
+    return placeMarketOrderNormalizingRejection(client, {
         tokenId: orderArgs.tokenID,
         side: OrderSide.SELL,
         shares: orderArgs.amount,
