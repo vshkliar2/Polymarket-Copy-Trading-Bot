@@ -1,11 +1,12 @@
 import { UserActivityInterface } from '../interfaces/User';
 import { ENV } from '../config/env';
-import { getUserActivityModel } from '../models/userHistory';
+import { getUserActivityModel, getUserPositionModel } from '../models/userHistory';
 import { postBuyOrder, postSellOrder } from '../utils/postOrder';
 import Logger from '../utils/logger';
 import { fetchPositionForMarket } from '../utils/positionHelpers';
 import getMyBalance from '../utils/getMyBalance';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
+import { UserPositionInterface } from '../interfaces/User';
 import { diffTraderAddresses, getActiveTraderAddresses } from './trackedTraders';
 import { onNewTrade, NewTradePayload } from './tradeEvents';
 import { formatError } from '../utils/errorHelpers';
@@ -229,26 +230,54 @@ const getReadyAggregatedTrades = (): AggregatedTrade[] => {
 };
 
 /**
+ * Fetch the trader's own position for one market from Mongo instead of the
+ * live API. tradeMonitor.ts (or websocketTradeMonitor.ts)'s
+ * updateTraderPositions() already refreshes user_positions_{address} from
+ * the SAME /positions data on every FETCH_INTERVAL tick (default 1s) for
+ * every tracked trader — independent of trade execution. By the time a
+ * trade reaches the executor, that write has already happened at most one
+ * interval earlier, so re-fetching the same data from the API here is pure
+ * duplication: this reads the just-written copy instead of paying for a
+ * second HTTP round trip per trade.
+ */
+const fetchTraderPositionFromDb = async (
+    userAddress: string,
+    conditionId: string
+): Promise<UserPositionInterface | undefined> => {
+    const UserPosition = getUserPositionModel(userAddress);
+    const position = await UserPosition.findOne({ conditionId }).lean().exec();
+    return (position as UserPositionInterface | null) ?? undefined;
+};
+
+/**
  * Prepare trade execution data (positions and balances).
  *
- * Positions are fetched via fetchPositionForMarket, which scopes the
+ * myPosition is fetched via fetchPositionForMarket, which scopes the
  * data-api /positions call to this trade's single conditionId (server-side,
- * via the `market` query param) instead of fetching each address's entire
- * position list and filtering client-side. This fixes a real correctness
- * bug on top of the API-cost win: the unscoped endpoint defaults to
- * limit=100 with no pagination and sorts largest-position-first, so a real,
- * held position could be silently excluded from the unscoped list purely by
- * truncation — making postSellOrder's `if (!myPosition)` bailout wrongly
- * skip a genuine SELL. A single-market-scoped request can never be affected
- * by that limit, since at most one position matches one condition ID.
+ * via the `market` query param) instead of fetching our entire position
+ * list and filtering client-side. This fixes a real correctness bug on top
+ * of the API-cost win: the unscoped endpoint defaults to limit=100 with no
+ * pagination and sorts largest-position-first, so a real, held position
+ * could be silently excluded from the unscoped list purely by truncation —
+ * making postSellOrder's `if (!myPosition)` bailout wrongly skip a genuine
+ * SELL. A single-market-scoped request can never be affected by that limit,
+ * since at most one position matches one condition ID. (There's no DB
+ * equivalent for our own positions — user_positions_{address} collections
+ * only exist for tracked traders, populated by the monitor — so myPosition
+ * still needs a live call.)
+ *
+ * userPosition is read from Mongo (fetchTraderPositionFromDb above) rather
+ * than fetched live at all, since the monitor already keeps that collection
+ * fresh on its own schedule — see fetchAllPositions/updateTraderPositions
+ * for the pagination fix that keeps that DB copy itself immune to the same
+ * limit=100 truncation.
  *
  * myBalance is our own USDC balance, fetched directly via getMyBalance —
- * independent of the positions list, so scoping positions doesn't change it.
- * userBalance (the trader's whole-portfolio value) is no longer fetched at
- * all: it was only ever used for a Logger.balance() display line, and
- * computing it "for real" would require the exact full-position-list fetch
- * this change eliminates — see logger.ts's balance() for the display-side
- * handling of `undefined`.
+ * independent of the positions list. userBalance (the trader's
+ * whole-portfolio value) is no longer fetched at all: it was only ever used
+ * for a Logger.balance() display line, and computing it "for real" would
+ * require the exact full-position-list fetch this change eliminates — see
+ * logger.ts's balance() for the display-side handling of `undefined`.
  *
  * BUY sizing (postBuyOrder) only ever reads myPosition/myBalance — the
  * trader's own position plays no part in a BUY decision — so the trader's
@@ -270,7 +299,7 @@ const prepareTradeData = async (trade: TradeWithUser) => {
 
     const [myPosition, userPosition, myBalance] = await Promise.all([
         fetchPositionForMarket(MY_EOA_ADDRESS, trade.conditionId),
-        fetchPositionForMarket(trade.userAddress, trade.conditionId),
+        fetchTraderPositionFromDb(trade.userAddress, trade.conditionId),
         getMyBalance(ENV.PROXY_WALLET),
     ]);
 

@@ -6,6 +6,38 @@ import { ENV } from '../config/env';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 
+// Polymarket's /positions endpoint's own maximum page size (its default is
+// 100, silently truncating without this).
+const POSITIONS_PAGE_LIMIT = 500;
+
+/**
+ * Fetch every position for `userAddress`, paging through the /positions
+ * endpoint via `limit`/`offset` until a short page signals the last one.
+ * Without this, callers that need a user's FULL position list (as opposed
+ * to fetchPositionForMarket's single-market lookup below) would silently
+ * see only the endpoint's default first 100 positions — sorted
+ * largest-position-first by default, so it's specifically the smaller
+ * positions, or anything past the 100th, that go missing.
+ */
+const fetchAllPositions = async (userAddress: string): Promise<UserPositionInterface[]> => {
+    const allPositions: UserPositionInterface[] = [];
+    let offset = 0;
+
+    for (;;) {
+        const positionsUrl = `https://data-api.polymarket.com/positions?user=${userAddress}&limit=${POSITIONS_PAGE_LIMIT}&offset=${offset}`;
+        const page = (await fetchData(positionsUrl)) as UserPositionInterface[];
+        const pageArray = Array.isArray(page) ? page : [];
+        allPositions.push(...pageArray);
+
+        if (pageArray.length < POSITIONS_PAGE_LIMIT) {
+            break;
+        }
+        offset += POSITIONS_PAGE_LIMIT;
+    }
+
+    return allPositions;
+};
+
 /**
  * Position statistics for a trader
  */
@@ -59,10 +91,7 @@ export const fetchUserPositionsAndBalance = async (
     positions: UserPositionInterface[];
     balance: number;
 }> => {
-    const positionsUrl = `https://data-api.polymarket.com/positions?user=${userAddress}`;
-    const positions = (await fetchData(positionsUrl)) as UserPositionInterface[];
-
-    const positionsArray = Array.isArray(positions) ? positions : [];
+    const positionsArray = await fetchAllPositions(userAddress);
 
     // Calculate balance from positions (current value)
     const balance = positionsArray.reduce((total, pos) => {
@@ -87,10 +116,7 @@ export const fetchMyPositionsAndBalance = async (): Promise<{
     usdcBalance: number;
     totalBalance: number;
 }> => {
-    const positionsUrl = `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`;
-    const positions = (await fetchData(positionsUrl)) as UserPositionInterface[];
-
-    const positionsArray = Array.isArray(positions) ? positions : [];
+    const positionsArray = await fetchAllPositions(MY_EOA_ADDRESS);
 
     // Get USDC balance
     const usdcBalance = await getMyBalance(PROXY_WALLET);
