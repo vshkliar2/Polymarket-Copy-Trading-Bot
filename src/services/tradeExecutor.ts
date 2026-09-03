@@ -1,7 +1,7 @@
 import { UserActivityInterface } from '../interfaces/User';
 import { ENV } from '../config/env';
 import { getUserActivityModel } from '../models/userHistory';
-import postOrder from '../utils/postOrder';
+import { postBuyOrder, postSellOrder } from '../utils/postOrder';
 import Logger from '../utils/logger';
 import {
     fetchMyPositionsAndBalance,
@@ -299,18 +299,19 @@ const executeSingleTrade = async (
     Logger.balance(myBalance, userBalance, trade.userAddress);
 
     // Execute the trade
-    const condition = trade.side === 'BUY' ? 'buy' : 'sell';
     try {
-        await postOrder(
-            clobClient,
-            condition,
-            myPosition,
-            userPosition,
-            trade,
-            myBalance,
-            userBalance,
-            trade.userAddress
-        );
+        if (trade.side === 'BUY') {
+            await postBuyOrder(clobClient, myPosition, trade, myBalance, trade.userAddress);
+        } else {
+            await postSellOrder(
+                clobClient,
+                myPosition,
+                userPosition,
+                trade,
+                myBalance,
+                trade.userAddress
+            );
+        }
     } catch (error) {
         // postOrder's submitOrder() calls client.placeMarketOrder(), which can
         // THROW typed errors (InsufficientLiquidityError, RateLimitError,
@@ -403,18 +404,25 @@ const doAggregatedTrading = async (
         };
 
         // Execute the aggregated trade
-        const condition = agg.side === 'BUY' ? 'buy' : 'sell';
         try {
-            await postOrder(
-                clobClient,
-                condition,
-                myPosition,
-                userPosition,
-                syntheticTrade,
-                myBalance,
-                userBalance,
-                agg.userAddress
-            );
+            if (agg.side === 'BUY') {
+                await postBuyOrder(
+                    clobClient,
+                    myPosition,
+                    syntheticTrade,
+                    myBalance,
+                    agg.userAddress
+                );
+            } else {
+                await postSellOrder(
+                    clobClient,
+                    myPosition,
+                    userPosition,
+                    syntheticTrade,
+                    myBalance,
+                    agg.userAddress
+                );
+            }
         } catch (error) {
             // Same throw-safety gap as executeSingleTrade: postOrder's
             // submitOrder() can throw (InsufficientLiquidityError,
