@@ -110,14 +110,20 @@ class Logger {
         this.writeToFile(tradeLog);
     }
 
-    static balance(myBalance: number, traderBalance: number, traderAddress: string) {
+    static balance(myBalance: number, traderBalance: number | undefined, traderAddress: string) {
         console.log(chalk.gray('Capital (USDC + Positions):'));
         console.log(
             chalk.gray(`  Your total capital:   ${chalk.green.bold(`$${myBalance.toFixed(2)}`)}`)
         );
+        // traderBalance is undefined for BUY trades — postBuyOrder never
+        // reads the trader's balance, so tradeExecutor.ts skips fetching it
+        // entirely to save an API call, rather than fetching it just to
+        // print this line.
+        const traderBalanceStr =
+            traderBalance === undefined ? 'not fetched (BUY)' : `$${traderBalance.toFixed(2)}`;
         console.log(
             chalk.gray(
-                `  Trader total capital: ${chalk.blue.bold(`$${traderBalance.toFixed(2)}`)} (${this.formatAddress(traderAddress)})`
+                `  Trader total capital: ${chalk.blue.bold(traderBalanceStr)} (${this.formatAddress(traderAddress)})`
             )
         );
     }
