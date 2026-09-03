@@ -231,9 +231,28 @@ const getReadyAggregatedTrades = (): AggregatedTrade[] => {
 };
 
 /**
- * Prepare trade execution data (positions and balances)
+ * Prepare trade execution data (positions and balances).
+ *
+ * BUY sizing (postBuyOrder) only ever reads myPosition/myBalance — the
+ * trader's own position/balance play no part in a BUY decision. Fetching
+ * fetchUserPositionsAndBalance() for a BUY was pure waste: one full HTTP
+ * call for the trader's entire position list, on every single BUY trade,
+ * whose only two outputs (userPosition, userBalance) were never read by
+ * postBuyOrder — userBalance only ever reached a Logger.balance() display
+ * line. Skipping it for BUY removes that call from the majority-case path
+ * without changing any order-placement behavior.
  */
 const prepareTradeData = async (trade: TradeWithUser) => {
+    if (trade.side === 'BUY') {
+        const myData = await fetchMyPositionsAndBalance();
+        return {
+            myPosition: findPositionByConditionId(myData.positions, trade.conditionId),
+            userPosition: undefined,
+            myBalance: myData.usdcBalance, // Use USDC balance only (available for trading)
+            userBalance: undefined,
+        };
+    }
+
     const [myData, userData] = await Promise.all([
         fetchMyPositionsAndBalance(),
         fetchUserPositionsAndBalance(trade.userAddress),
