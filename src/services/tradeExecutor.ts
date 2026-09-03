@@ -3,11 +3,9 @@ import { ENV } from '../config/env';
 import { getUserActivityModel } from '../models/userHistory';
 import { postBuyOrder, postSellOrder } from '../utils/postOrder';
 import Logger from '../utils/logger';
-import {
-    fetchMyPositionsAndBalance,
-    fetchUserPositionsAndBalance,
-    findPositionByConditionId,
-} from '../utils/positionHelpers';
+import { fetchPositionForMarket } from '../utils/positionHelpers';
+import getMyBalance from '../utils/getMyBalance';
+import MY_EOA_ADDRESS from '../utils/getMyEOA';
 import { diffTraderAddresses, getActiveTraderAddresses } from './trackedTraders';
 import { onNewTrade, NewTradePayload } from './tradeEvents';
 import { formatError } from '../utils/errorHelpers';
@@ -233,39 +231,54 @@ const getReadyAggregatedTrades = (): AggregatedTrade[] => {
 /**
  * Prepare trade execution data (positions and balances).
  *
+ * Positions are fetched via fetchPositionForMarket, which scopes the
+ * data-api /positions call to this trade's single conditionId (server-side,
+ * via the `market` query param) instead of fetching each address's entire
+ * position list and filtering client-side. This fixes a real correctness
+ * bug on top of the API-cost win: the unscoped endpoint defaults to
+ * limit=100 with no pagination and sorts largest-position-first, so a real,
+ * held position could be silently excluded from the unscoped list purely by
+ * truncation — making postSellOrder's `if (!myPosition)` bailout wrongly
+ * skip a genuine SELL. A single-market-scoped request can never be affected
+ * by that limit, since at most one position matches one condition ID.
+ *
+ * myBalance is our own USDC balance, fetched directly via getMyBalance —
+ * independent of the positions list, so scoping positions doesn't change it.
+ * userBalance (the trader's whole-portfolio value) is no longer fetched at
+ * all: it was only ever used for a Logger.balance() display line, and
+ * computing it "for real" would require the exact full-position-list fetch
+ * this change eliminates — see logger.ts's balance() for the display-side
+ * handling of `undefined`.
+ *
  * BUY sizing (postBuyOrder) only ever reads myPosition/myBalance — the
- * trader's own position/balance play no part in a BUY decision. Fetching
- * fetchUserPositionsAndBalance() for a BUY was pure waste: one full HTTP
- * call for the trader's entire position list, on every single BUY trade,
- * whose only two outputs (userPosition, userBalance) were never read by
- * postBuyOrder — userBalance only ever reached a Logger.balance() display
- * line. Skipping it for BUY removes that call from the majority-case path
- * without changing any order-placement behavior.
+ * trader's own position plays no part in a BUY decision — so the trader's
+ * position is skipped entirely on that path.
  */
 const prepareTradeData = async (trade: TradeWithUser) => {
     if (trade.side === 'BUY') {
-        const myData = await fetchMyPositionsAndBalance();
+        const [myPosition, myBalance] = await Promise.all([
+            fetchPositionForMarket(MY_EOA_ADDRESS, trade.conditionId),
+            getMyBalance(ENV.PROXY_WALLET),
+        ]);
         return {
-            myPosition: findPositionByConditionId(myData.positions, trade.conditionId),
+            myPosition,
             userPosition: undefined,
-            myBalance: myData.usdcBalance, // Use USDC balance only (available for trading)
+            myBalance,
             userBalance: undefined,
         };
     }
 
-    const [myData, userData] = await Promise.all([
-        fetchMyPositionsAndBalance(),
-        fetchUserPositionsAndBalance(trade.userAddress),
+    const [myPosition, userPosition, myBalance] = await Promise.all([
+        fetchPositionForMarket(MY_EOA_ADDRESS, trade.conditionId),
+        fetchPositionForMarket(trade.userAddress, trade.conditionId),
+        getMyBalance(ENV.PROXY_WALLET),
     ]);
-
-    const myPosition = findPositionByConditionId(myData.positions, trade.conditionId);
-    const userPosition = findPositionByConditionId(userData.positions, trade.conditionId);
 
     return {
         myPosition,
         userPosition,
-        myBalance: myData.usdcBalance, // Use USDC balance only (available for trading)
-        userBalance: userData.balance,
+        myBalance,
+        userBalance: undefined,
     };
 };
 

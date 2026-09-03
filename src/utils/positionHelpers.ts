@@ -122,3 +122,35 @@ export const findPositionByConditionId = (
 ): UserPositionInterface | undefined => {
     return positions.find((position) => position.conditionId === conditionId);
 };
+
+/**
+ * Fetch a single position for `userAddress` in one specific market, via the
+ * `/positions` endpoint's `market` (condition ID) query parameter.
+ *
+ * This exists alongside fetchUserPositionsAndBalance/fetchMyPositionsAndBalance
+ * (not as a replacement) because those two still serve callers that
+ * genuinely need every position a user holds (portfolioManager.ts,
+ * tradeMonitor.ts, websocketTradeMonitor.ts). tradeExecutor.ts's
+ * prepareTradeData only ever needs the ONE position matching the trade being
+ * copied, so scoping server-side fixes two things at once:
+ *
+ * 1. Correctness: the unscoped endpoint defaults to limit=100 with no
+ *    pagination in our calls, sorted largest-position-first by default. A
+ *    real, held position that happens to be small (or one of >100 positions)
+ *    could be silently excluded from the unscoped list, making
+ *    findPositionByConditionId wrongly return undefined for a position that
+ *    genuinely exists — e.g. postSellOrder's `if (!myPosition)` bailout would
+ *    wrongly skip a real SELL. Scoping by market can never be affected by
+ *    that limit, since at most one position can match a single condition ID.
+ * 2. Cost: the response body is at most one position instead of the user's
+ *    entire portfolio.
+ */
+export const fetchPositionForMarket = async (
+    userAddress: string,
+    conditionId: string
+): Promise<UserPositionInterface | undefined> => {
+    const positionsUrl = `https://data-api.polymarket.com/positions?user=${userAddress}&market=${conditionId}`;
+    const positions = (await fetchData(positionsUrl)) as UserPositionInterface[];
+    const positionsArray = Array.isArray(positions) ? positions : [];
+    return positionsArray[0];
+};
