@@ -115,12 +115,15 @@ class Logger {
         console.log(
             chalk.gray(`  Your total capital:   ${chalk.green.bold(`$${myBalance.toFixed(2)}`)}`)
         );
-        // traderBalance is undefined for BUY trades — postBuyOrder never
-        // reads the trader's balance, so tradeExecutor.ts skips fetching it
-        // entirely to save an API call, rather than fetching it just to
-        // print this line.
+        // traderBalance is undefined whenever tradeExecutor.ts skipped
+        // fetching the trader's whole-portfolio value: always for BUY trades
+        // (postBuyOrder never reads it), and now for SELL trades too, since
+        // prepareTradeData fetches only the trader's single-market position
+        // (via the market-scoped /positions call) rather than their entire
+        // position list — this line simply isn't worth a full-portfolio
+        // fetch on every trade.
         const traderBalanceStr =
-            traderBalance === undefined ? 'not fetched (BUY)' : `$${traderBalance.toFixed(2)}`;
+            traderBalance === undefined ? 'not fetched' : `$${traderBalance.toFixed(2)}`;
         console.log(
             chalk.gray(
                 `  Trader total capital: ${chalk.blue.bold(traderBalanceStr)} (${this.formatAddress(traderAddress)})`
