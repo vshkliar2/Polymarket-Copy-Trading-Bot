@@ -24,6 +24,25 @@ const RETRY_LIMIT = ENV.RETRY_LIMIT;
 const COPY_STRATEGY_CONFIG = ENV.COPY_STRATEGY_CONFIG;
 const DRY_RUN = ENV.DRY_RUN;
 
+// Headroom added on top of the best-ask price for FOK BUY orders' maxPrice.
+// See the comment on submitOrder's BUY branch below: with maxSpend === amount
+// (fee included in the dollar budget) and maxPrice set to the ask price
+// exactly, the taker fee has nowhere to fit under the price ceiling, so the
+// FOK order is killed on every attempt regardless of book depth. This buffer
+// gives the fee room to fit while keeping the ceiling tight — Polymarket's
+// taker fee is a few bps, far under this cushion.
+const FOK_BUY_PRICE_BUFFER = 0.01;
+
+// Hard ceiling for the buffered maxPrice. The CLOB rejects any maxPrice
+// above `1 - tickSize` (validated synchronously, not as a RequestRejectedError,
+// so it isn't retried like a normal rejection — it propagates uncaught).
+// This bot doesn't fetch per-market tick size, and the smallest tick size in
+// use on Polymarket is 0.01, so capping here at 0.99 (rather than 1) keeps
+// every buffered maxPrice inside 1 - tickSize for every market, instead of
+// only markets with tick size < 0.01 — asks at/above 0.99 already leave the
+// bot almost no room for slippage anyway.
+const FOK_BUY_MAX_PRICE_CEILING = 0.99;
+
 /**
  * Maps a thrown RequestRejectedError's message text to the matching
  * OrderResponseErrorCode. @polymarket/bindings' own error-code mapping
@@ -175,22 +194,18 @@ export const submitOrder = async (
             // maxSpend === amount tells the SDK the requested amount should
             // INCLUDE taker fees, so it resizes the actual share quantity
             // down to fit the fee inside orderArgs.amount rather than
-            // charging the fee on top of it. This is the actual root cause
-            // of FOK-not-filled BUY failures under @polymarket/client:
-            // orderArgs.price (maxPrice below) is set to the best ask price
-            // itself, leaving zero headroom for any fee — a BUY order sized
-            // at exactly the best ask, with no maxSpend, cannot fill even a
-            // penny of taker fee within that price ceiling, so it is killed
-            // by construction every single time, independent of real market
-            // liquidity or retries. Confirmed against @polymarket/client's
-            // own docs: "Desired USD notional to buy, before market and
-            // builder taker fees... Set maxSpend equal to amount when the
-            // requested amount should include fees." SELL orders have no
-            // equivalent issue — they specify a token `shares` count, and
-            // fees come out of USDC proceeds received, not out of the order
-            // itself.
+            // charging the fee on top of it. Without price headroom above
+            // the best ask, the taker fee has nowhere to fit under maxPrice,
+            // so a FOK order is killed on every attempt regardless of book
+            // depth — hence FOK_BUY_PRICE_BUFFER below. Confirmed against
+            // @polymarket/client's own docs: "Desired USD notional to buy,
+            // before market and builder taker fees... Set maxSpend equal to
+            // amount when the requested amount should include fees." SELL
+            // orders have no equivalent issue — they specify a token
+            // `shares` count, and fees come out of USDC proceeds received,
+            // not out of the order itself.
             maxSpend: orderArgs.amount,
-            maxPrice: orderArgs.price,
+            maxPrice: Math.min(FOK_BUY_MAX_PRICE_CEILING, orderArgs.price + FOK_BUY_PRICE_BUFFER),
             orderType: OrderType.FOK,
         });
     }
