@@ -4,6 +4,7 @@ import type { AcceptedOrderResponse, OrderResponse } from '@polymarket/bindings/
 import { ENV } from '../config/env';
 import { UserActivityInterface, UserPositionInterface } from '../interfaces/User';
 import { getUserActivityModel } from '../models/userHistory';
+import { getMyPositionModel } from '../models/myPosition';
 import Logger from './logger';
 import { calculateOrderSize, getTradeMultiplier } from '../config/copyStrategy';
 import { isInsufficientBalanceOrAllowanceCode } from './errorHelpers';
@@ -206,6 +207,93 @@ const submitOrder = async (
     });
 };
 
+// Positions rounding at or below this are treated as fully closed — avoids
+// leaving a stray doc with a near-zero float remainder after a full sell.
+const POSITION_DUST_THRESHOLD = 1e-6;
+
+/**
+ * Records a confirmed BUY fill against our own self-tracked position.
+ * avgPrice is recomputed as a size-weighted average of cost — the same
+ * definition the live /positions API itself uses — so this stays
+ * consistent with what fetchMyPositionsAndBalance would have reported for
+ * a position built from just these fills.
+ *
+ * Also stamps `lastFillAt: Date.now()` — tradeMonitor.ts's
+ * reconcileMyPositions() uses this to give this write a grace period of
+ * authority over the live /positions API, which lags real on-chain
+ * settlement by a few seconds and could otherwise overwrite/delete this
+ * fresh, correct data with stale data on its next tick.
+ */
+const recordBuyFill = async (
+    conditionId: string,
+    asset: string,
+    tokensBought: number,
+    fillPrice: number
+): Promise<void> => {
+    const MyPosition = getMyPositionModel();
+    const existing = await MyPosition.findOne({ conditionId }).lean();
+    const oldSize = (existing as { size?: number } | null)?.size ?? 0;
+    const oldAvgPrice = (existing as { avgPrice?: number } | null)?.avgPrice ?? 0;
+    const oldTotalBought = (existing as { totalBought?: number } | null)?.totalBought ?? 0;
+
+    const newSize = oldSize + tokensBought;
+    const newAvgPrice = (oldSize * oldAvgPrice + tokensBought * fillPrice) / newSize;
+
+    await MyPosition.findOneAndUpdate(
+        { conditionId },
+        {
+            $set: {
+                conditionId,
+                asset,
+                size: newSize,
+                avgPrice: newAvgPrice,
+                totalBought: oldTotalBought + tokensBought,
+                lastFillAt: Date.now(),
+            },
+        },
+        { upsert: true }
+    );
+};
+
+/**
+ * Records a confirmed SELL fill against our own self-tracked position.
+ * avgPrice is left unchanged — standard cost-basis accounting: selling
+ * some shares doesn't change the average cost of the shares that remain.
+ * Deletes the doc once size rounds to ~0 so a stale zero-size record can't
+ * be misread later as "still holding a dust amount."
+ *
+ * Also stamps `lastFillAt: Date.now()` on the partial-sell path (see
+ * recordBuyFill's doc comment for why) — not needed on the delete path
+ * since the doc no longer exists for reconciliation to race against.
+ */
+const recordSellFill = async (conditionId: string, tokensSold: number): Promise<void> => {
+    const MyPosition = getMyPositionModel();
+    const existing = await MyPosition.findOne({ conditionId }).lean();
+    if (!existing) {
+        // Nothing to reconcile against — this can only happen if my_positions
+        // was never seeded/reconciled for a position we somehow hold. Leave
+        // it absent rather than fabricate a negative-size document.
+        return;
+    }
+    const oldSize = (existing as { size?: number }).size ?? 0;
+    const newSize = oldSize - tokensSold;
+
+    if (newSize <= POSITION_DUST_THRESHOLD) {
+        await MyPosition.deleteOne({ conditionId });
+        return;
+    }
+
+    await MyPosition.updateOne(
+        { conditionId },
+        { $set: { size: newSize, lastFillAt: Date.now() } }
+    );
+};
+
+// Test-only exports — not part of the module's public surface for
+// production callers, which never need to write my_positions directly.
+export const __test_recordBuyFill = recordBuyFill;
+export const __test_recordSellFill = recordSellFill;
+
 // Polymarket minimum order sizes
 const MIN_ORDER_SIZE_USD = 1.0; // Minimum order size in USD for BUY orders
 const MIN_ORDER_SIZE_TOKENS = 1.0; // Minimum order size in tokens for SELL orders
@@ -363,6 +451,19 @@ export const postBuyOrder = async (
             retry = 0;
             const tokensBought = order_arges.amount / order_arges.price;
             totalBoughtTokens += tokensBought;
+            try {
+                await recordBuyFill(
+                    trade.conditionId,
+                    trade.asset,
+                    tokensBought,
+                    order_arges.price
+                );
+            } catch (err) {
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                Logger.warning(
+                    `Failed to record BUY fill in my_positions for conditionId ${trade.conditionId}: ${errorMsg}`
+                );
+            }
             Logger.orderResult(
                 true,
                 `Bought $${order_arges.amount.toFixed(2)} at $${order_arges.price} (${tokensBought.toFixed(2)} tokens)`
@@ -635,6 +736,14 @@ export const postSellOrder = async (
         if (resp.ok === true) {
             retry = 0;
             totalSoldTokens += order_arges.amount;
+            try {
+                await recordSellFill(trade.conditionId, order_arges.amount);
+            } catch (err) {
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                Logger.warning(
+                    `Failed to record SELL fill in my_positions for conditionId ${trade.conditionId}: ${errorMsg}`
+                );
+            }
             Logger.orderResult(true, `Sold ${order_arges.amount} tokens at $${order_arges.price}`);
 
             // Send Telegram notification for successful SELL trade

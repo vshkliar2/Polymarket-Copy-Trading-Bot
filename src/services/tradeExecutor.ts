@@ -1,11 +1,10 @@
 import { UserActivityInterface } from '../interfaces/User';
 import { ENV } from '../config/env';
 import { getUserActivityModel, getUserPositionModel } from '../models/userHistory';
+import { getMyPositionModel } from '../models/myPosition';
 import { postBuyOrder, postSellOrder } from '../utils/postOrder';
 import Logger from '../utils/logger';
-import { fetchPositionForMarket } from '../utils/positionHelpers';
 import getMyBalance from '../utils/getMyBalance';
-import MY_EOA_ADDRESS from '../utils/getMyEOA';
 import { UserPositionInterface } from '../interfaces/User';
 import { diffTraderAddresses, getActiveTraderAddresses } from './trackedTraders';
 import { onNewTrade, NewTradePayload } from './tradeEvents';
@@ -250,26 +249,35 @@ const fetchTraderPositionFromDb = async (
 };
 
 /**
+ * Fetch our own position for one market from Mongo instead of the live API.
+ * postOrder.ts writes to my_positions on every one of our own confirmed
+ * fills (see recordBuyFill/recordSellFill), and tradeMonitor.ts's
+ * reconciliation tick keeps it in sync with the live API on a fixed
+ * interval to bound drift from anything that changes our position outside
+ * postOrder.ts (the manual CLI scripts) — so there is no live API call
+ * needed here at all.
+ */
+const fetchMyPositionFromDb = async (
+    conditionId: string
+): Promise<UserPositionInterface | undefined> => {
+    const MyPosition = getMyPositionModel();
+    const position = await MyPosition.findOne({ conditionId }).lean().exec();
+    return (position as UserPositionInterface | null) ?? undefined;
+};
+
+/**
  * Prepare trade execution data (positions and balances).
  *
- * myPosition is fetched via fetchPositionForMarket, which scopes the
- * data-api /positions call to this trade's single conditionId (server-side,
- * via the `market` query param) instead of fetching our entire position
- * list and filtering client-side. This fixes a real correctness bug on top
- * of the API-cost win: the unscoped endpoint defaults to limit=100 with no
- * pagination and sorts largest-position-first, so a real, held position
- * could be silently excluded from the unscoped list purely by truncation —
- * making postSellOrder's `if (!myPosition)` bailout wrongly skip a genuine
- * SELL. A single-market-scoped request can never be affected by that limit,
- * since at most one position matches one condition ID. (There's no DB
- * equivalent for our own positions — user_positions_{address} collections
- * only exist for tracked traders, populated by the monitor — so myPosition
- * still needs a live call.)
+ * myPosition is read from Mongo (fetchMyPositionFromDb above) rather than
+ * fetched live at all, since postOrder.ts writes to my_positions on every
+ * one of our own confirmed fills and tradeMonitor.ts's reconciliation tick
+ * keeps it in sync with the live API on a fixed interval — see
+ * fetchMyPositionFromDb's own comment for why no live call is needed here.
  *
  * userPosition is read from Mongo (fetchTraderPositionFromDb above) rather
  * than fetched live at all, since the monitor already keeps that collection
  * fresh on its own schedule — see fetchAllPositions/updateTraderPositions
- * for the pagination fix that keeps that DB copy itself immune to the same
+ * for the pagination fix that keeps that DB copy itself immune to
  * limit=100 truncation.
  *
  * myBalance is our own USDC balance, fetched directly via getMyBalance —
@@ -286,7 +294,7 @@ const fetchTraderPositionFromDb = async (
 const prepareTradeData = async (trade: TradeWithUser) => {
     if (trade.side === 'BUY') {
         const [myPosition, myBalance] = await Promise.all([
-            fetchPositionForMarket(MY_EOA_ADDRESS, trade.conditionId),
+            fetchMyPositionFromDb(trade.conditionId),
             getMyBalance(ENV.PROXY_WALLET),
         ]);
         return {
@@ -298,7 +306,7 @@ const prepareTradeData = async (trade: TradeWithUser) => {
     }
 
     const [myPosition, userPosition, myBalance] = await Promise.all([
-        fetchPositionForMarket(MY_EOA_ADDRESS, trade.conditionId),
+        fetchMyPositionFromDb(trade.conditionId),
         fetchTraderPositionFromDb(trade.userAddress, trade.conditionId),
         getMyBalance(ENV.PROXY_WALLET),
     ]);
