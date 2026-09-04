@@ -415,7 +415,9 @@ export const postBuyOrder = async (
     let totalBoughtTokens = 0; // Track total tokens bought for this trade
 
     while (remaining > 0 && retry < RETRY_LIMIT) {
+        const orderBookStart = Date.now();
         const orderBook = await client.fetchOrderBook({ assetId: trade.asset });
+        Logger.info(`⏱️  fetchOrderBook: ${Date.now() - orderBookStart}ms`);
         if (!orderBook.asks || orderBook.asks.length === 0) {
             Logger.warning('No asks available in order book');
             await UserActivity.updateOne({ _id: trade._id }, { bot: true });
@@ -463,7 +465,9 @@ export const postBuyOrder = async (
         Logger.info(
             `Creating order: $${orderSize.toFixed(2)} @ $${minPriceAsk.price} (Balance: $${myBalance.toFixed(2)})`
         );
+        const submitStart = Date.now();
         const resp = await submitOrder(client, order_arges);
+        Logger.info(`⏱️  submitOrder (sign + CLOB round-trip): ${Date.now() - submitStart}ms`);
         if (resp.ok === true) {
             retry = 0;
             const tokensBought = order_arges.amount / order_arges.price;

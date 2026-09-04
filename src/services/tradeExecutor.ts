@@ -363,11 +363,14 @@ const executeSingleTrade = async (
         transactionHash: trade.transactionHash,
     });
 
+    const prepareStart = Date.now();
     const { myPosition, userPosition, myBalance, userBalance } = await prepareTradeData(trade);
+    Logger.info(`⏱️  prepareTradeData (balance + position lookup): ${Date.now() - prepareStart}ms`);
 
     Logger.balance(myBalance, userBalance, trade.userAddress);
 
     // Execute the trade
+    const executeStart = Date.now();
     try {
         if (trade.side === 'BUY') {
             await postBuyOrder(clobClient, myPosition, trade, myBalance, trade.userAddress);
@@ -419,6 +422,9 @@ const executeSingleTrade = async (
         return;
     }
 
+    Logger.info(
+        `⏱️  postOrder execution (order book + submit + DB writes): ${Date.now() - executeStart}ms`
+    );
     Logger.info(`⏱️  Total processing time: ${Date.now() - trade.detectedAt}ms since detection`);
     Logger.separator();
 };
