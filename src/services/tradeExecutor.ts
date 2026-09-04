@@ -243,8 +243,10 @@ const fetchTraderPositionFromDb = async (
     userAddress: string,
     conditionId: string
 ): Promise<UserPositionInterface | undefined> => {
+    const start = Date.now();
     const UserPosition = getUserPositionModel(userAddress);
     const position = await UserPosition.findOne({ conditionId }).lean().exec();
+    Logger.info(`⏱️  [mongo] UserPosition.findOne (trader position): ${Date.now() - start}ms`);
     return (position as UserPositionInterface | null) ?? undefined;
 };
 
@@ -260,8 +262,10 @@ const fetchTraderPositionFromDb = async (
 const fetchMyPositionFromDb = async (
     conditionId: string
 ): Promise<UserPositionInterface | undefined> => {
+    const start = Date.now();
     const MyPosition = getMyPositionModel();
     const position = await MyPosition.findOne({ conditionId }).lean().exec();
+    Logger.info(`⏱️  [mongo] MyPosition.findOne: ${Date.now() - start}ms`);
     return (position as UserPositionInterface | null) ?? undefined;
 };
 
@@ -291,11 +295,18 @@ const fetchMyPositionFromDb = async (
  * trader's own position plays no part in a BUY decision — so the trader's
  * position is skipped entirely on that path.
  */
+const fetchMyBalanceTimed = async (): Promise<number> => {
+    const start = Date.now();
+    const balance = await getMyBalance(ENV.PROXY_WALLET);
+    Logger.info(`⏱️  [rpc] getMyBalance (USDC balanceOf): ${Date.now() - start}ms`);
+    return balance;
+};
+
 const prepareTradeData = async (trade: TradeWithUser) => {
     if (trade.side === 'BUY') {
         const [myPosition, myBalance] = await Promise.all([
             fetchMyPositionFromDb(trade.conditionId),
-            getMyBalance(ENV.PROXY_WALLET),
+            fetchMyBalanceTimed(),
         ]);
         return {
             myPosition,
@@ -308,7 +319,7 @@ const prepareTradeData = async (trade: TradeWithUser) => {
     const [myPosition, userPosition, myBalance] = await Promise.all([
         fetchMyPositionFromDb(trade.conditionId),
         fetchTraderPositionFromDb(trade.userAddress, trade.conditionId),
-        getMyBalance(ENV.PROXY_WALLET),
+        fetchMyBalanceTimed(),
     ]);
 
     return {
@@ -328,11 +339,13 @@ const prepareTradeData = async (trade: TradeWithUser) => {
  * call claimed the trade, false if something else already did.
  */
 const claimTrade = async (trade: TradeWithUser): Promise<boolean> => {
+    const start = Date.now();
     const UserActivity = getUserActivityModel(trade.userAddress);
     const claimed = await UserActivity.findOneAndUpdate(
         { _id: trade._id, bot: false, botExcutedTime: 0 },
         { $set: { botExcutedTime: 1 } }
     ).exec();
+    Logger.info(`⏱️  [mongo] UserActivity.findOneAndUpdate (claimTrade): ${Date.now() - start}ms`);
     return claimed !== null;
 };
 

@@ -246,7 +246,9 @@ export const recordBuyFill = async (
     fillPrice: number
 ): Promise<void> => {
     const MyPosition = getMyPositionModel();
+    const findStart = Date.now();
     const existing = await MyPosition.findOne({ conditionId }).lean();
+    Logger.info(`⏱️  [mongo] MyPosition.findOne (recordBuyFill): ${Date.now() - findStart}ms`);
     const oldSize = (existing as { size?: number } | null)?.size ?? 0;
     const oldAvgPrice = (existing as { avgPrice?: number } | null)?.avgPrice ?? 0;
     const oldTotalBought = (existing as { totalBought?: number } | null)?.totalBought ?? 0;
@@ -254,6 +256,7 @@ export const recordBuyFill = async (
     const newSize = oldSize + tokensBought;
     const newAvgPrice = (oldSize * oldAvgPrice + tokensBought * fillPrice) / newSize;
 
+    const updateStart = Date.now();
     await MyPosition.findOneAndUpdate(
         { conditionId },
         {
@@ -267,6 +270,9 @@ export const recordBuyFill = async (
             },
         },
         { upsert: true }
+    );
+    Logger.info(
+        `⏱️  [mongo] MyPosition.findOneAndUpdate (recordBuyFill): ${Date.now() - updateStart}ms`
     );
 };
 
@@ -283,7 +289,9 @@ export const recordBuyFill = async (
  */
 export const recordSellFill = async (conditionId: string, tokensSold: number): Promise<void> => {
     const MyPosition = getMyPositionModel();
+    const findStart = Date.now();
     const existing = await MyPosition.findOne({ conditionId }).lean();
+    Logger.info(`⏱️  [mongo] MyPosition.findOne (recordSellFill): ${Date.now() - findStart}ms`);
     if (!existing) {
         // Nothing to reconcile against — this can only happen if my_positions
         // was never seeded/reconciled for a position we somehow hold. Leave
@@ -293,8 +301,12 @@ export const recordSellFill = async (conditionId: string, tokensSold: number): P
     const oldSize = (existing as { size?: number }).size ?? 0;
     const newSize = oldSize - tokensSold;
 
+    const writeStart = Date.now();
     if (newSize <= POSITION_DUST_THRESHOLD) {
         await MyPosition.deleteOne({ conditionId });
+        Logger.info(
+            `⏱️  [mongo] MyPosition.deleteOne (recordSellFill): ${Date.now() - writeStart}ms`
+        );
         return;
     }
 
@@ -302,6 +314,7 @@ export const recordSellFill = async (conditionId: string, tokensSold: number): P
         { conditionId },
         { $set: { size: newSize, lastFillAt: Date.now() } }
     );
+    Logger.info(`⏱️  [mongo] MyPosition.updateOne (recordSellFill): ${Date.now() - writeStart}ms`);
 };
 
 // Historical test-only aliases, kept for postOrder.myPositionWrites.test.ts's
@@ -417,7 +430,7 @@ export const postBuyOrder = async (
     while (remaining > 0 && retry < RETRY_LIMIT) {
         const orderBookStart = Date.now();
         const orderBook = await client.fetchOrderBook({ assetId: trade.asset });
-        Logger.info(`⏱️  fetchOrderBook: ${Date.now() - orderBookStart}ms`);
+        Logger.info(`⏱️  [api] fetchOrderBook (CLOB): ${Date.now() - orderBookStart}ms`);
         if (!orderBook.asks || orderBook.asks.length === 0) {
             Logger.warning('No asks available in order book');
             await UserActivity.updateOne({ _id: trade._id }, { bot: true });
@@ -467,7 +480,9 @@ export const postBuyOrder = async (
         );
         const submitStart = Date.now();
         const resp = await submitOrder(client, order_arges);
-        Logger.info(`⏱️  submitOrder (sign + CLOB round-trip): ${Date.now() - submitStart}ms`);
+        Logger.info(
+            `⏱️  [api] submitOrder (sign + CLOB round-trip): ${Date.now() - submitStart}ms`
+        );
         if (resp.ok === true) {
             retry = 0;
             const tokensBought = order_arges.amount / order_arges.price;
