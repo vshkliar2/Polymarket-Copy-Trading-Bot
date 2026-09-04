@@ -27,12 +27,69 @@ interface Market {
     closed: boolean;
 }
 
+interface CliOptions {
+    market?: string;
+    conditionId?: string;
+    outcome?: string;
+    amount?: number;
+}
+
+const USAGE = [
+    'Usage:',
+    '  npm run manual-buy -- --market="<search query>" --outcome=<outcome> --amount=<usd>',
+    '  npm run manual-buy -- --condition-id=<conditionId> --outcome=<outcome> --amount=<usd>',
+    '',
+    'Examples:',
+    '  npm run manual-buy -- --market="Will X happen" --outcome=Yes --amount=25',
+    '  npm run manual-buy -- --condition-id=0xabc123... --outcome=Yes --amount=25',
+    '',
+    '--condition-id is exact and unambiguous — prefer it when you already know it.',
+    '--market does a text search and requires exactly one match; ambiguous or',
+    'missing matches are refused rather than guessed at.',
+].join('\n');
+
+/**
+ * Named flags (--flag=value), matching the convention already used in
+ * discoverTraders.ts, rather than positional args — a positional arg list
+ * for a script that spends real money is easy to get subtly wrong (which
+ * position was the amount again?), and named flags let --market and
+ * --condition-id be unambiguous alternatives rather than the same
+ * positional slot doing double duty.
+ */
+const parseArgs = (argv: string[]): CliOptions => {
+    const options: CliOptions = {};
+    for (const arg of argv) {
+        if (arg.startsWith('--market=')) {
+            options.market = arg.slice('--market='.length);
+        } else if (arg.startsWith('--condition-id=')) {
+            options.conditionId = arg.slice('--condition-id='.length);
+        } else if (arg.startsWith('--outcome=')) {
+            options.outcome = arg.slice('--outcome='.length);
+        } else if (arg.startsWith('--amount=')) {
+            options.amount = parseFloat(arg.slice('--amount='.length));
+        }
+    }
+    return options;
+};
+
 /**
  * The public /markets endpoint (not /positions) — we're buying INTO a
  * market we may not already hold, so there is no existing position to look
- * up. Filtered client-side by question text and to active, unclosed markets.
+ * up. `condition_ids` is an exact, server-side filter (used when
+ * --condition-id is given); `search` is a fuzzy, catalog-wide text search
+ * (used with --market) that this script still filters and disambiguates
+ * client-side, since gamma's search can return unrelated matches.
  */
-const fetchMarkets = async (searchQuery: string): Promise<Market[]> => {
+const fetchMarketsByConditionId = async (conditionId: string): Promise<Market[]> => {
+    const url = `https://gamma-api.polymarket.com/markets?condition_ids=${encodeURIComponent(conditionId)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch market: ${response.statusText}`);
+    }
+    return response.json();
+};
+
+const fetchMarketsBySearch = async (searchQuery: string): Promise<Market[]> => {
     const url = `https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=20&search=${encodeURIComponent(searchQuery)}`;
     const response = await fetch(url);
     if (!response.ok) {
@@ -48,7 +105,8 @@ const fetchMarkets = async (searchQuery: string): Promise<Market[]> => {
  * query can easily match several unrelated markets. Returns every
  * substring match rather than silently picking the first one, so the
  * caller can refuse to proceed on ambiguity instead of risking a real order
- * on the wrong market.
+ * on the wrong market. Not used at all on the --condition-id path, which is
+ * exact by construction.
  */
 const findMatchingMarkets = (markets: Market[], searchQuery: string): Market[] => {
     return markets.filter((m) => m.question.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -226,46 +284,38 @@ const buyMarket = async (
     }
 };
 
-async function main() {
-    const marketSearchQuery = process.argv[2];
-    const outcomeLabel = process.argv[3];
-    const usdAmountArg = process.argv[4];
-
-    if (!marketSearchQuery || !outcomeLabel || !usdAmountArg) {
-        console.log('❌ Missing required arguments');
-        console.log('Usage: npm run manual-buy "<market search query>" <outcome> <usd amount>');
-        console.log('Example: npm run manual-buy "Will X happen" Yes 25');
+/**
+ * Resolves --market or --condition-id (mutually exclusive) down to exactly
+ * one Market, or exits the process. Kept separate from main() so the two
+ * lookup paths (exact vs. fuzzy-search) share one place that owns the
+ * "exactly one, or refuse" invariant.
+ */
+const resolveMarket = async (options: CliOptions): Promise<Market> => {
+    if (options.conditionId && options.market) {
+        console.log('❌ Specify either --market or --condition-id, not both');
         process.exit(1);
     }
 
-    const usdAmount = parseFloat(usdAmountArg);
-    if (isNaN(usdAmount) || usdAmount < MIN_ORDER_SIZE_USD) {
-        console.log(
-            `❌ Invalid USD amount: "${usdAmountArg}" (must be at least $${MIN_ORDER_SIZE_USD})`
-        );
-        process.exit(1);
+    if (options.conditionId) {
+        console.log(`🔍 Looking up condition ID: ${options.conditionId}`);
+        const markets = await fetchMarketsByConditionId(options.conditionId);
+        if (markets.length === 0) {
+            console.log(`❌ No market found for condition ID "${options.conditionId}"`);
+            process.exit(1);
+        }
+        return markets[0]!;
     }
 
-    console.log('🚀 Manual Buy Script');
-    console.log('═══════════════════════════════════════════════\n');
-    console.log(`📍 Wallet: ${PROXY_WALLET}`);
-    console.log(`🔍 Searching for: "${marketSearchQuery}"`);
-    console.log(`📊 Outcome: ${outcomeLabel}`);
-    console.log(`💵 Amount: $${usdAmount.toFixed(2)}\n`);
-
-    try {
-        const clobClient = await createClobClient();
-
-        console.log('✅ Connected to Polymarket\n');
-
+    if (options.market) {
+        console.log(`🔍 Searching for: "${options.market}"`);
         console.log('📥 Fetching markets...');
-        const markets = await fetchMarkets(marketSearchQuery);
+        const markets = await fetchMarketsBySearch(options.market);
         console.log(`Found ${markets.length} market(s)\n`);
 
-        const matches = findMatchingMarkets(markets, marketSearchQuery);
+        const matches = findMatchingMarkets(markets, options.market);
 
         if (matches.length === 0) {
-            console.log(`❌ Market "${marketSearchQuery}" not found!`);
+            console.log(`❌ Market "${options.market}" not found!`);
             console.log('\nAvailable markets:');
             markets.forEach((m, idx) => {
                 console.log(`${idx + 1}. ${m.question}`);
@@ -275,24 +325,59 @@ async function main() {
 
         if (matches.length > 1) {
             console.log(
-                `❌ "${marketSearchQuery}" matches ${matches.length} markets — refusing to guess which one to buy:`
+                `❌ "${options.market}" matches ${matches.length} markets — refusing to guess which one to buy:`
             );
             matches.forEach((m, idx) => {
                 console.log(`${idx + 1}. ${m.question} (conditionId: ${m.conditionId})`);
             });
-            console.log('\nNarrow your search query to match exactly one market and try again.');
+            console.log(
+                '\nNarrow your search query, or use --condition-id=<id> from the list above, and try again.'
+            );
             process.exit(1);
         }
 
-        const market = matches[0]!;
+        return matches[0]!;
+    }
+
+    console.log('❌ Specify either --market="<search query>" or --condition-id=<conditionId>');
+    console.log(USAGE);
+    process.exit(1);
+};
+
+async function main() {
+    const options = parseArgs(process.argv.slice(2));
+
+    if (!options.outcome || options.amount === undefined) {
+        console.log('❌ Missing required arguments');
+        console.log(USAGE);
+        process.exit(1);
+    }
+
+    if (isNaN(options.amount) || options.amount < MIN_ORDER_SIZE_USD) {
+        console.log(`❌ Invalid --amount (must be at least $${MIN_ORDER_SIZE_USD})`);
+        process.exit(1);
+    }
+
+    console.log('🚀 Manual Buy Script');
+    console.log('═══════════════════════════════════════════════\n');
+    console.log(`📍 Wallet: ${PROXY_WALLET}`);
+    console.log(`📊 Outcome: ${options.outcome}`);
+    console.log(`💵 Amount: $${options.amount.toFixed(2)}\n`);
+
+    try {
+        const clobClient = await createClobClient();
+
+        console.log('✅ Connected to Polymarket\n');
+
+        const market = await resolveMarket(options);
 
         console.log('✅ Market found!');
         console.log(`📌 Market: ${market.question}`);
         console.log(`📌 Condition ID: ${market.conditionId}`);
 
-        const resolved = resolveOutcomeToken(market, outcomeLabel);
+        const resolved = resolveOutcomeToken(market, options.outcome);
         if (!resolved) {
-            console.log(`❌ Outcome "${outcomeLabel}" not found in this market!`);
+            console.log(`❌ Outcome "${options.outcome}" not found in this market!`);
             console.log(`Available outcomes: ${market.outcomes}`);
             process.exit(1);
         }
@@ -300,7 +385,7 @@ async function main() {
         console.log(`📌 Outcome: ${resolved.outcome}`);
         console.log(`📌 Token ID: ${resolved.tokenId}`);
 
-        await buyMarket(clobClient, market.conditionId, resolved.tokenId, usdAmount);
+        await buyMarket(clobClient, market.conditionId, resolved.tokenId, options.amount);
 
         console.log('\n✅ Script completed!');
     } catch (error) {

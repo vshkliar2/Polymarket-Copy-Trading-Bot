@@ -28,6 +28,49 @@ interface Position {
     outcome: string;
 }
 
+interface CliOptions {
+    market?: string;
+    conditionId?: string;
+    percent?: number;
+}
+
+const USAGE = [
+    'Usage:',
+    '  npm run manual-sell -- --market="<search query>" [--percent=<1-100>]',
+    '  npm run manual-sell -- --condition-id=<conditionId> [--percent=<1-100>]',
+    '',
+    'Examples:',
+    '  npm run manual-sell -- --market="Will X happen" --percent=50',
+    '  npm run manual-sell -- --condition-id=0xabc123...',
+    '',
+    '--percent defaults to 100 (sell the entire position) if omitted.',
+    '--condition-id is exact and unambiguous — prefer it when you already know it.',
+    '--market does a text search over your own positions and requires exactly',
+    'one match; ambiguous or missing matches are refused rather than guessed at.',
+].join('\n');
+
+/**
+ * Named flags (--flag=value), matching the convention already used in
+ * discoverTraders.ts, rather than positional args — a positional arg list
+ * for a script that sells real money is easy to get subtly wrong (was the
+ * percentage the 2nd or 3rd arg?), and named flags let --market and
+ * --condition-id be unambiguous alternatives rather than the same
+ * positional slot doing double duty.
+ */
+const parseArgs = (argv: string[]): CliOptions => {
+    const options: CliOptions = {};
+    for (const arg of argv) {
+        if (arg.startsWith('--market=')) {
+            options.market = arg.slice('--market='.length);
+        } else if (arg.startsWith('--condition-id=')) {
+            options.conditionId = arg.slice('--condition-id='.length);
+        } else if (arg.startsWith('--percent=')) {
+            options.percent = parseFloat(arg.slice('--percent='.length));
+        }
+    }
+    return options;
+};
+
 const fetchPositions = async (): Promise<Position[]> => {
     const url = `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`;
     const response = await fetch(url);
@@ -37,8 +80,23 @@ const fetchPositions = async (): Promise<Position[]> => {
     return response.json();
 };
 
-const findMatchingPosition = (positions: Position[], searchQuery: string): Position | undefined => {
-    return positions.find((pos) => pos.title.toLowerCase().includes(searchQuery.toLowerCase()));
+const fetchPositionByConditionId = async (conditionId: string): Promise<Position[]> => {
+    const url = `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}&market=${encodeURIComponent(conditionId)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch position: ${response.statusText}`);
+    }
+    return response.json();
+};
+
+/**
+ * Returns every substring match rather than silently picking the first
+ * one — a generic query (e.g. "election") could match more than one of the
+ * caller's own positions, and guessing which one to sell is exactly the
+ * kind of mistake that should refuse rather than proceed.
+ */
+const findMatchingPositions = (positions: Position[], searchQuery: string): Position[] => {
+    return positions.filter((pos) => pos.title.toLowerCase().includes(searchQuery.toLowerCase()));
 };
 
 const updatePolymarketCache = async (clobClient: SecureClientType, tokenId: string) => {
@@ -181,49 +239,38 @@ const sellPosition = async (clobClient: SecureClientType, position: Position, se
     }
 };
 
-async function main() {
-    const marketSearchQuery = process.argv[2];
-    const sellPercentageArg = process.argv[3];
-
-    if (!marketSearchQuery) {
-        console.log('❌ No market search query provided');
-        console.log(
-            'Usage: npm run manual-sell "<market search query>" [sell percentage, default 100]'
-        );
-        console.log('Example: npm run manual-sell "Will X happen" 50');
+/**
+ * Resolves --market or --condition-id (mutually exclusive) down to exactly
+ * one Position, or exits the process. Kept separate from main() so the two
+ * lookup paths (exact vs. fuzzy-search) share one place that owns the
+ * "exactly one, or refuse" invariant.
+ */
+const resolvePosition = async (options: CliOptions): Promise<Position> => {
+    if (options.conditionId && options.market) {
+        console.log('❌ Specify either --market or --condition-id, not both');
         process.exit(1);
     }
 
-    const sellPercentage = sellPercentageArg ? parseFloat(sellPercentageArg) / 100 : 1.0;
-    if (isNaN(sellPercentage) || sellPercentage <= 0 || sellPercentage > 1) {
-        console.log(
-            `❌ Invalid sell percentage: "${sellPercentageArg}" (must be between 1 and 100)`
-        );
-        process.exit(1);
+    if (options.conditionId) {
+        console.log(`🔍 Looking up condition ID: ${options.conditionId}`);
+        const positions = await fetchPositionByConditionId(options.conditionId);
+        if (positions.length === 0) {
+            console.log(`❌ No position found for condition ID "${options.conditionId}"`);
+            process.exit(1);
+        }
+        return positions[0]!;
     }
 
-    console.log('🚀 Manual Sell Script');
-    console.log('═══════════════════════════════════════════════\n');
-    console.log(`📍 Wallet: ${PROXY_WALLET}`);
-    console.log(`🔍 Searching for: "${marketSearchQuery}"`);
-    console.log(`📊 Sell percentage: ${(sellPercentage * 100).toFixed(0)}%\n`);
-
-    try {
-        // Create client
-        const clobClient = await createClobClient();
-
-        console.log('✅ Connected to Polymarket\n');
-
-        // Get all positions
+    if (options.market) {
+        console.log(`🔍 Searching for: "${options.market}"`);
         console.log('📥 Fetching positions...');
         const positions = await fetchPositions();
         console.log(`Found ${positions.length} position(s)\n`);
 
-        // Find matching position
-        const position = findMatchingPosition(positions, marketSearchQuery);
+        const matches = findMatchingPositions(positions, options.market);
 
-        if (!position) {
-            console.log(`❌ Position "${marketSearchQuery}" not found!`);
+        if (matches.length === 0) {
+            console.log(`❌ Position "${options.market}" not found!`);
             console.log('\nAvailable positions:');
             positions.forEach((pos, idx) => {
                 console.log(
@@ -232,6 +279,51 @@ async function main() {
             });
             process.exit(1);
         }
+
+        if (matches.length > 1) {
+            console.log(
+                `❌ "${options.market}" matches ${matches.length} positions — refusing to guess which one to sell:`
+            );
+            matches.forEach((pos, idx) => {
+                console.log(
+                    `${idx + 1}. ${pos.title} - ${pos.outcome} (conditionId: ${pos.conditionId})`
+                );
+            });
+            console.log(
+                '\nNarrow your search query, or use --condition-id=<id> from the list above, and try again.'
+            );
+            process.exit(1);
+        }
+
+        return matches[0]!;
+    }
+
+    console.log('❌ Specify either --market="<search query>" or --condition-id=<conditionId>');
+    console.log(USAGE);
+    process.exit(1);
+};
+
+async function main() {
+    const options = parseArgs(process.argv.slice(2));
+
+    const sellPercentage = options.percent !== undefined ? options.percent / 100 : 1.0;
+    if (isNaN(sellPercentage) || sellPercentage <= 0 || sellPercentage > 1) {
+        console.log(`❌ Invalid --percent: "${options.percent}" (must be between 1 and 100)`);
+        process.exit(1);
+    }
+
+    console.log('🚀 Manual Sell Script');
+    console.log('═══════════════════════════════════════════════\n');
+    console.log(`📍 Wallet: ${PROXY_WALLET}`);
+    console.log(`📊 Sell percentage: ${(sellPercentage * 100).toFixed(0)}%\n`);
+
+    try {
+        // Create client
+        const clobClient = await createClobClient();
+
+        console.log('✅ Connected to Polymarket\n');
+
+        const position = await resolvePosition(options);
 
         console.log('✅ Position found!');
         console.log(`📌 Market: ${position.title}`);
@@ -247,7 +339,7 @@ async function main() {
             console.log(
                 `\n❌ Sell size (${sellSize.toFixed(2)} tokens) is below minimum (1.0 token)`
             );
-            console.log('Please increase your position or adjust the sell percentage argument');
+            console.log('Please increase your position or adjust --percent');
             process.exit(1);
         }
 
