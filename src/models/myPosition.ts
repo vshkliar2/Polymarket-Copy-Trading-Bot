@@ -6,6 +6,7 @@ export interface MyPositionInterface extends Document {
     size: number;
     avgPrice: number;
     totalBought?: number;
+    lastFillAt?: number;
 }
 
 const myPositionSchema = new Schema<MyPositionInterface>({
@@ -14,6 +15,14 @@ const myPositionSchema = new Schema<MyPositionInterface>({
     size: { type: Number, required: true, default: 0 },
     avgPrice: { type: Number, required: true, default: 0 },
     totalBought: { type: Number, required: false, default: 0 },
+    // Millisecond epoch timestamp of the last time postOrder.ts itself wrote
+    // to this doc via a confirmed fill (recordBuyFill/recordSellFill) — NOT
+    // touched by tradeMonitor.ts's reconciliation writes. tradeMonitor.ts's
+    // reconcileMyPositions() reads this to give a fresh self-tracked write a
+    // grace period of authority over the live /positions API, which lags
+    // real on-chain settlement by a few seconds (see reconcileMyPositions's
+    // doc comment for the race this prevents).
+    lastFillAt: { type: Number, required: false },
 });
 
 let cachedModel: mongoose.Model<MyPositionInterface> | null = null;

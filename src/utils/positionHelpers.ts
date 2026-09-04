@@ -153,21 +153,30 @@ export const findPositionByConditionId = (
  * Fetch a single position for `userAddress` in one specific market, via the
  * `/positions` endpoint's `market` (condition ID) query parameter.
  *
- * This exists alongside fetchUserPositionsAndBalance/fetchMyPositionsAndBalance
- * (not as a replacement) because those two still serve callers that
- * genuinely need every position a user holds (portfolioManager.ts,
- * tradeMonitor.ts, websocketTradeMonitor.ts). tradeExecutor.ts's
- * prepareTradeData only ever needs the ONE position matching the trade being
- * copied, so scoping server-side fixes two things at once:
+ * Currently unused by tradeExecutor.ts: this function originally backed
+ * prepareTradeData's per-trade `myPosition` lookup, but the self-tracked
+ * `my_positions` collection plan replaced that with a direct Mongo read —
+ * see tradeExecutor.ts's `fetchMyPositionFromDb`, which reads the bot's own
+ * position from `my_positions` (kept accurate by postOrder.ts's
+ * recordBuyFill/recordSellFill on every fill, and by tradeMonitor.ts's
+ * reconcileMyPositions tick) instead of calling the live API per trade.
+ *
+ * It is kept rather than deleted — a reasonable general-purpose utility for
+ * fetching one user's position in one market scoped server-side (cheaper
+ * and immune to the unscoped endpoint's page-size/sort caveats described
+ * below), and a plausible fallback if a live-API read is ever needed again.
+ * As of this writing it has no other production callers in this repo.
+ *
+ * Scoping server-side (vs. calling fetchUserPositionsAndBalance /
+ * fetchMyPositionsAndBalance and filtering client-side) fixes two things:
  *
  * 1. Correctness: the unscoped endpoint defaults to limit=100 with no
  *    pagination in our calls, sorted largest-position-first by default. A
  *    real, held position that happens to be small (or one of >100 positions)
  *    could be silently excluded from the unscoped list, making
  *    findPositionByConditionId wrongly return undefined for a position that
- *    genuinely exists — e.g. postSellOrder's `if (!myPosition)` bailout would
- *    wrongly skip a real SELL. Scoping by market can never be affected by
- *    that limit, since at most one position can match a single condition ID.
+ *    genuinely exists. Scoping by market can never be affected by that
+ *    limit, since at most one position can match a single condition ID.
  * 2. Cost: the response body is at most one position instead of the user's
  *    entire portfolio.
  */

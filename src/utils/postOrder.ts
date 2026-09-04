@@ -217,6 +217,12 @@ const POSITION_DUST_THRESHOLD = 1e-6;
  * definition the live /positions API itself uses — so this stays
  * consistent with what fetchMyPositionsAndBalance would have reported for
  * a position built from just these fills.
+ *
+ * Also stamps `lastFillAt: Date.now()` — tradeMonitor.ts's
+ * reconcileMyPositions() uses this to give this write a grace period of
+ * authority over the live /positions API, which lags real on-chain
+ * settlement by a few seconds and could otherwise overwrite/delete this
+ * fresh, correct data with stale data on its next tick.
  */
 const recordBuyFill = async (
     conditionId: string,
@@ -242,6 +248,7 @@ const recordBuyFill = async (
                 size: newSize,
                 avgPrice: newAvgPrice,
                 totalBought: oldTotalBought + tokensBought,
+                lastFillAt: Date.now(),
             },
         },
         { upsert: true }
@@ -254,6 +261,10 @@ const recordBuyFill = async (
  * some shares doesn't change the average cost of the shares that remain.
  * Deletes the doc once size rounds to ~0 so a stale zero-size record can't
  * be misread later as "still holding a dust amount."
+ *
+ * Also stamps `lastFillAt: Date.now()` on the partial-sell path (see
+ * recordBuyFill's doc comment for why) — not needed on the delete path
+ * since the doc no longer exists for reconciliation to race against.
  */
 const recordSellFill = async (conditionId: string, tokensSold: number): Promise<void> => {
     const MyPosition = getMyPositionModel();
@@ -272,7 +283,10 @@ const recordSellFill = async (conditionId: string, tokensSold: number): Promise<
         return;
     }
 
-    await MyPosition.updateOne({ conditionId }, { $set: { size: newSize } });
+    await MyPosition.updateOne(
+        { conditionId },
+        { $set: { size: newSize, lastFillAt: Date.now() } }
+    );
 };
 
 // Test-only exports — not part of the module's public surface for

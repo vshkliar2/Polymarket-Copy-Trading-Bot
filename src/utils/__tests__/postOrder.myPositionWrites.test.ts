@@ -77,6 +77,7 @@ interface FakeDoc {
     size: number;
     avgPrice: number;
     totalBought: number;
+    lastFillAt?: number;
 }
 
 let store: Map<string, FakeDoc>;
@@ -186,11 +187,16 @@ describe('my_positions writes on fill', () => {
     });
 
     it('creates a new position doc on first BUY fill', async () => {
+        const before = Date.now();
         await __test_recordBuyFill('0xcond1', 'asset1', 10, 0.5);
         const doc = await getMyPositionModel().findOne({ conditionId: '0xcond1' }).lean();
         expect(doc?.size).toBe(10);
         expect(doc?.avgPrice).toBe(0.5);
         expect(doc?.totalBought).toBe(10);
+        // Fix-round finding: recordBuyFill must stamp lastFillAt so
+        // reconcileMyPositions can give this write a grace period of
+        // authority over the live API's own (lagging) reconciliation data.
+        expect(doc?.lastFillAt).toBeGreaterThanOrEqual(before);
     });
 
     it('weighted-averages avgPrice across two BUY fills', async () => {
@@ -204,10 +210,14 @@ describe('my_positions writes on fill', () => {
 
     it('decrements size on SELL fill without changing avgPrice', async () => {
         await __test_recordBuyFill('0xcond3', 'asset3', 10, 0.5);
+        const beforeSell = Date.now();
         await __test_recordSellFill('0xcond3', 4);
         const doc = await getMyPositionModel().findOne({ conditionId: '0xcond3' }).lean();
         expect(doc?.size).toBeCloseTo(6, 5);
         expect(doc?.avgPrice).toBe(0.5);
+        // Fix-round finding: recordSellFill must also stamp lastFillAt on
+        // its partial-sell (non-delete) path.
+        expect(doc?.lastFillAt).toBeGreaterThanOrEqual(beforeSell);
     });
 
     it('removes the doc when a SELL fill brings size to ~0', async () => {
