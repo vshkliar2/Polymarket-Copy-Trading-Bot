@@ -24,6 +24,22 @@ const RETRY_LIMIT = ENV.RETRY_LIMIT;
 const COPY_STRATEGY_CONFIG = ENV.COPY_STRATEGY_CONFIG;
 const DRY_RUN = ENV.DRY_RUN;
 
+// Headroom added to a BUY order's maxPrice above the order-book snapshot's
+// best-ask price at the moment submitOrder() decided to buy. Without this,
+// maxPrice is set to the EXACT best-ask price with zero tolerance for any
+// price movement between fetching that snapshot and the order actually
+// reaching the matching engine — on a fast-moving market (e.g. a live
+// sports event), even a single-tick uptick in real time kills the FOK
+// order outright, every retry, since each retry re-fetches a fresh (but
+// immediately-again-stale) snapshot and hits the same razor's edge.
+// Confirmed live: repeated FOK-not-filled failures on a fast-moving
+// market despite ample order-book depth relative to order size, ruling
+// out the earlier maxSpend/fee-headroom bug as the cause. 0.5% is small
+// enough not to meaningfully change execution economics (a $20 order's
+// worst-case cost impact is $0.10) while giving real headroom against
+// realistic tick sizes on Polymarket's markets.
+const BUY_PRICE_TOLERANCE = 0.005;
+
 /**
  * Maps a thrown RequestRejectedError's message text to the matching
  * OrderResponseErrorCode. @polymarket/bindings' own error-code mapping
@@ -190,7 +206,17 @@ export const submitOrder = async (
             // fees come out of USDC proceeds received, not out of the order
             // itself.
             maxSpend: orderArgs.amount,
-            maxPrice: orderArgs.price,
+            // See BUY_PRICE_TOLERANCE's comment above: orderArgs.price is a
+            // snapshot from an order-book fetch that already happened by
+            // the time this request reaches the matching engine. Giving
+            // maxPrice a small buffer above that snapshot price — rather
+            // than the exact snapshot price itself — means a fractional
+            // uptick in the meantime doesn't kill the FOK order outright.
+            // This only raises the ceiling the order is ALLOWED to fill
+            // at; it doesn't change amount/maxSpend (the USD budget), so
+            // it can't cause the order to overspend even if it does fill
+            // at a slightly higher real-time price.
+            maxPrice: orderArgs.price * (1 + BUY_PRICE_TOLERANCE),
             orderType: OrderType.FOK,
         });
     }
@@ -451,14 +477,28 @@ export const postBuyOrder = async (
         const resp = await submitOrder(client, order_arges);
         if (resp.ok === true) {
             retry = 0;
-            const tokensBought = order_arges.amount / order_arges.price;
+            // Derive the ACTUAL fill from the response (makingAmount = USD
+            // spent, takingAmount = tokens received — confirmed against the
+            // DRY_RUN mock's own construction above) rather than recomputing
+            // tokensBought from order_arges.amount/order_arges.price. Those
+            // two were a reliable stand-in for the real fill only while
+            // maxPrice had zero tolerance above the snapshot price (so the
+            // fill could only ever happen at that exact snapshot price or
+            // better); now that maxPrice carries BUY_PRICE_TOLERANCE
+            // headroom, a real fill can legitimately land above the
+            // snapshot price, and recomputing from the snapshot would
+            // silently understate cost basis / overstate token count.
+            const actualUsdSpent = parseFloat(resp.makingAmount);
+            const tokensBought = parseFloat(resp.takingAmount);
+            const effectiveFillPrice =
+                tokensBought > 0 ? actualUsdSpent / tokensBought : order_arges.price;
             totalBoughtTokens += tokensBought;
             try {
                 await recordBuyFill(
                     trade.conditionId,
                     trade.asset,
                     tokensBought,
-                    order_arges.price
+                    effectiveFillPrice
                 );
             } catch (err) {
                 const errorMsg = err instanceof Error ? err.message : String(err);
@@ -468,7 +508,7 @@ export const postBuyOrder = async (
             }
             Logger.orderResult(
                 true,
-                `Bought $${order_arges.amount.toFixed(2)} at $${order_arges.price} (${tokensBought.toFixed(2)} tokens)`
+                `Bought $${actualUsdSpent.toFixed(2)} at $${effectiveFillPrice.toFixed(4)} (${tokensBought.toFixed(2)} tokens)`
             );
 
             // Send Telegram notification for successful trade
