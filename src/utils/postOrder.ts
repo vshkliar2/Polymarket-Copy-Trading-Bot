@@ -143,7 +143,7 @@ const placeMarketOrderNormalizingRejection = async (
  * also preserves the exact behaviour of the previous clob-client-v2 call,
  * `postOrder(signedOrder, OrderType.FOK)`.
  */
-const submitOrder = async (
+export const submitOrder = async (
     client: SecureClientType,
     orderArgs: { side: OrderSide; tokenID: string; amount: number; price: number }
 ): Promise<OrderResponse> => {
@@ -224,7 +224,7 @@ const POSITION_DUST_THRESHOLD = 1e-6;
  * settlement by a few seconds and could otherwise overwrite/delete this
  * fresh, correct data with stale data on its next tick.
  */
-const recordBuyFill = async (
+export const recordBuyFill = async (
     conditionId: string,
     asset: string,
     tokensBought: number,
@@ -266,7 +266,7 @@ const recordBuyFill = async (
  * recordBuyFill's doc comment for why) — not needed on the delete path
  * since the doc no longer exists for reconciliation to race against.
  */
-const recordSellFill = async (conditionId: string, tokensSold: number): Promise<void> => {
+export const recordSellFill = async (conditionId: string, tokensSold: number): Promise<void> => {
     const MyPosition = getMyPositionModel();
     const existing = await MyPosition.findOne({ conditionId }).lean();
     if (!existing) {
@@ -289,8 +289,10 @@ const recordSellFill = async (conditionId: string, tokensSold: number): Promise<
     );
 };
 
-// Test-only exports — not part of the module's public surface for
-// production callers, which never need to write my_positions directly.
+// Historical test-only aliases, kept for postOrder.myPositionWrites.test.ts's
+// existing imports — recordBuyFill/recordSellFill are now real named exports
+// above (used directly by src/scripts/manualBuy.ts and manualSell.ts), so
+// these aliases are no longer the only way to reach them.
 export const __test_recordBuyFill = recordBuyFill;
 export const __test_recordSellFill = recordSellFill;
 
