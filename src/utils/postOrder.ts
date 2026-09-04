@@ -437,7 +437,19 @@ export const postBuyOrder = async (
             retry = 0;
             const tokensBought = order_arges.amount / order_arges.price;
             totalBoughtTokens += tokensBought;
-            await recordBuyFill(trade.conditionId, trade.asset, tokensBought, order_arges.price);
+            try {
+                await recordBuyFill(
+                    trade.conditionId,
+                    trade.asset,
+                    tokensBought,
+                    order_arges.price
+                );
+            } catch (err) {
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                Logger.warning(
+                    `Failed to record BUY fill in my_positions for conditionId ${trade.conditionId}: ${errorMsg}`
+                );
+            }
             Logger.orderResult(
                 true,
                 `Bought $${order_arges.amount.toFixed(2)} at $${order_arges.price} (${tokensBought.toFixed(2)} tokens)`
@@ -710,7 +722,14 @@ export const postSellOrder = async (
         if (resp.ok === true) {
             retry = 0;
             totalSoldTokens += order_arges.amount;
-            await recordSellFill(trade.conditionId, order_arges.amount);
+            try {
+                await recordSellFill(trade.conditionId, order_arges.amount);
+            } catch (err) {
+                const errorMsg = err instanceof Error ? err.message : String(err);
+                Logger.warning(
+                    `Failed to record SELL fill in my_positions for conditionId ${trade.conditionId}: ${errorMsg}`
+                );
+            }
             Logger.orderResult(true, `Sold ${order_arges.amount} tokens at $${order_arges.price}`);
 
             // Send Telegram notification for successful SELL trade
