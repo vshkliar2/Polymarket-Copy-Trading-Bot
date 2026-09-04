@@ -1,9 +1,11 @@
-import { OrderSide, OrderType } from '@polymarket/client';
+import { OrderSide } from '@polymarket/client';
 import { updateBalanceAllowance } from '@polymarket/client/actions';
 import { AssetType } from '@polymarket/bindings/clob';
 import { ENV } from '../config/env';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
 import createClobClient from '../utils/createClobClient';
+import { submitOrder, recordSellFill } from '../utils/postOrder';
+import { isInsufficientBalanceOrAllowanceCode } from '../utils/errorHelpers';
 
 /**
  * The authenticated client returned by createClobClient(). @polymarket/client's
@@ -15,10 +17,6 @@ type SecureClientType = Awaited<ReturnType<typeof createClobClient>>;
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
-
-// Market search query
-const MARKET_SEARCH_QUERY = 'Khamenei out as Supreme Leader of Iran by January 31';
-const SELL_PERCENTAGE = 1.0; // 100%
 
 interface Position {
     asset: string;
@@ -58,13 +56,20 @@ const updatePolymarketCache = async (clobClient: SecureClientType, tokenId: stri
     }
 };
 
+/**
+ * Places SELL orders via the same submitOrder() the live bot uses (not a
+ * separate, duplicated clobClient.placeMarketOrder() call) so this script
+ * automatically inherits any future fix to order construction, and calls
+ * recordSellFill() on every successful fill so my_positions reflects a
+ * manual sell immediately — without this, my_positions would only catch up
+ * on the next reconciliation tick in tradeMonitor.ts, or not at all if the
+ * position was fully closed and the bot isn't currently running.
+ */
 const sellPosition = async (clobClient: SecureClientType, position: Position, sellSize: number) => {
     let remaining = sellSize;
     let retry = 0;
 
-    console.log(
-        `\n🔄 Starting to sell ${sellSize.toFixed(2)} tokens (${(SELL_PERCENTAGE * 100).toFixed(0)}% of position)`
-    );
+    console.log(`\n🔄 Starting to sell ${sellSize.toFixed(2)} tokens`);
     console.log(`Token ID: ${position.asset}`);
     console.log(`Market: ${position.title} - ${position.outcome}\n`);
 
@@ -101,38 +106,54 @@ const sellPosition = async (clobClient: SecureClientType, position: Position, se
                 orderAmount = parseFloat(maxPriceBid.size);
             }
 
-            // Create sell order
-            const orderArgs = {
+            const orderPrice = parseFloat(maxPriceBid.price);
+
+            console.log(`📤 Selling ${orderAmount.toFixed(2)} tokens at $${orderPrice}...`);
+
+            const resp = await submitOrder(clobClient, {
                 side: OrderSide.SELL,
                 tokenID: position.asset,
                 amount: orderAmount,
-                price: parseFloat(maxPriceBid.price),
-            };
-
-            console.log(`📤 Selling ${orderAmount.toFixed(2)} tokens at $${orderArgs.price}...`);
-
-            const resp = await clobClient.placeMarketOrder({
-                tokenId: orderArgs.tokenID,
-                side: OrderSide.SELL,
-                shares: orderArgs.amount,
-                minPrice: orderArgs.price,
-                orderType: OrderType.FOK,
+                price: orderPrice,
             });
 
             if (resp.ok === true) {
                 retry = 0;
-                const soldValue = (orderAmount * orderArgs.price).toFixed(2);
+                const soldValue = (orderAmount * orderPrice).toFixed(2);
                 console.log(
-                    `✅ SUCCESS: Sold ${orderAmount.toFixed(2)} tokens at $${orderArgs.price} (Total: $${soldValue})`
+                    `✅ SUCCESS: Sold ${orderAmount.toFixed(2)} tokens at $${orderPrice} (Total: $${soldValue})`
                 );
+                // Decrement BEFORE the my_positions write, and isolate that
+                // write in its own try/catch: a real order already filled at
+                // this point, so a Mongo hiccup here must never re-enter the
+                // outer catch/retry path below and cause this same amount to
+                // be sold again as a duplicate real order.
                 remaining -= orderAmount;
+                try {
+                    await recordSellFill(position.conditionId, orderAmount);
+                } catch (recordError) {
+                    console.log(
+                        `⚠️  Warning: failed to record fill in my_positions (sell itself succeeded): ${recordError}`
+                    );
+                }
 
                 if (remaining > 0) {
                     console.log(`⏳ Remaining to sell: ${remaining.toFixed(2)} tokens\n`);
                 }
             } else {
-                retry += 1;
                 const errorMsg = resp.message;
+
+                if (isInsufficientBalanceOrAllowanceCode(resp.code)) {
+                    console.log(
+                        `❌ Order rejected: ${errorMsg || 'Insufficient balance or allowance'}`
+                    );
+                    console.log(
+                        'Skipping remaining attempts. Run `npm run check-allowance` before retrying.'
+                    );
+                    break;
+                }
+
+                retry += 1;
                 console.log(
                     `⚠️  Order failed (attempt ${retry}/${RETRY_LIMIT})${errorMsg ? `: ${errorMsg}` : ''}`
                 );
@@ -161,11 +182,31 @@ const sellPosition = async (clobClient: SecureClientType, position: Position, se
 };
 
 async function main() {
+    const marketSearchQuery = process.argv[2];
+    const sellPercentageArg = process.argv[3];
+
+    if (!marketSearchQuery) {
+        console.log('❌ No market search query provided');
+        console.log(
+            'Usage: npm run manual-sell "<market search query>" [sell percentage, default 100]'
+        );
+        console.log('Example: npm run manual-sell "Will X happen" 50');
+        process.exit(1);
+    }
+
+    const sellPercentage = sellPercentageArg ? parseFloat(sellPercentageArg) / 100 : 1.0;
+    if (isNaN(sellPercentage) || sellPercentage <= 0 || sellPercentage > 1) {
+        console.log(
+            `❌ Invalid sell percentage: "${sellPercentageArg}" (must be between 1 and 100)`
+        );
+        process.exit(1);
+    }
+
     console.log('🚀 Manual Sell Script');
     console.log('═══════════════════════════════════════════════\n');
     console.log(`📍 Wallet: ${PROXY_WALLET}`);
-    console.log(`🔍 Searching for: "${MARKET_SEARCH_QUERY}"`);
-    console.log(`📊 Sell percentage: ${(SELL_PERCENTAGE * 100).toFixed(0)}%\n`);
+    console.log(`🔍 Searching for: "${marketSearchQuery}"`);
+    console.log(`📊 Sell percentage: ${(sellPercentage * 100).toFixed(0)}%\n`);
 
     try {
         // Create client
@@ -179,10 +220,10 @@ async function main() {
         console.log(`Found ${positions.length} position(s)\n`);
 
         // Find matching position
-        const position = findMatchingPosition(positions, MARKET_SEARCH_QUERY);
+        const position = findMatchingPosition(positions, marketSearchQuery);
 
         if (!position) {
-            console.log(`❌ Position "${MARKET_SEARCH_QUERY}" not found!`);
+            console.log(`❌ Position "${marketSearchQuery}" not found!`);
             console.log('\nAvailable positions:');
             positions.forEach((pos, idx) => {
                 console.log(
@@ -200,13 +241,13 @@ async function main() {
         console.log(`📌 Current value: $${position.currentValue.toFixed(2)}`);
 
         // Calculate sell size
-        const sellSize = position.size * SELL_PERCENTAGE;
+        const sellSize = position.size * sellPercentage;
 
         if (sellSize < 1.0) {
             console.log(
                 `\n❌ Sell size (${sellSize.toFixed(2)} tokens) is below minimum (1.0 token)`
             );
-            console.log('Please increase your position or adjust SELL_PERCENTAGE');
+            console.log('Please increase your position or adjust the sell percentage argument');
             process.exit(1);
         }
 
