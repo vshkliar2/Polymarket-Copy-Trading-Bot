@@ -14,6 +14,7 @@ import {
     TraderModelConfig,
 } from './trackedTraders';
 import { emitNewTrade } from './tradeEvents';
+import { getMyPositionModel } from '../models/myPosition';
 
 const TOO_OLD_TIMESTAMP = ENV.TOO_OLD_TIMESTAMP;
 const FETCH_INTERVAL = ENV.FETCH_INTERVAL;
@@ -246,6 +247,49 @@ const updateTraderPositions = async (
 };
 
 /**
+ * Re-syncs my_positions against the live API on every tick of the main
+ * monitor loop (same FETCH_INTERVAL cadence updateTraderPositions already
+ * uses for trader collections). postOrder.ts keeps my_positions accurate
+ * for the bot's own BUY/SELL fills already, so in the common case this is
+ * a no-op confirmation; it exists to bound drift from the CLI scripts
+ * (manualSell.ts, sellLargePositions.ts, closeStalePositions.ts,
+ * closeResolvedPositions.ts, redeemResolvedPositions.ts) that can change
+ * our on-chain position outside postOrder.ts's control, without requiring
+ * each of those scripts to know about my_positions individually.
+ *
+ * Unlike updateTraderPositions (upsert-only), this also DELETES any
+ * my_positions doc whose conditionId the live API no longer reports at
+ * all — the only signal available that a position was fully closed by one
+ * of those out-of-band scripts.
+ */
+export const reconcileMyPositions = async (): Promise<void> => {
+    const { positions } = await fetchMyPositionsAndBalance();
+    const MyPosition = getMyPositionModel();
+
+    const liveConditionIds = positions.map((p) => p.conditionId).filter(Boolean);
+
+    if (positions.length > 0) {
+        for (const position of positions) {
+            await MyPosition.findOneAndUpdate(
+                { conditionId: position.conditionId },
+                {
+                    $set: {
+                        conditionId: position.conditionId,
+                        asset: position.asset,
+                        size: position.size,
+                        avgPrice: position.avgPrice,
+                        totalBought: position.totalBought,
+                    },
+                },
+                { upsert: true }
+            );
+        }
+    }
+
+    await MyPosition.deleteMany({ conditionId: { $nin: liveConditionIds } });
+};
+
+/**
  * Fetch and process trade data for a single trader
  */
 const fetchTradeDataForTrader = async ({
@@ -342,6 +386,12 @@ const tradeMonitor = async (): Promise<void> => {
 
     while (isRunning) {
         await fetchTradeData();
+        if (!isRunning) break;
+        try {
+            await reconcileMyPositions();
+        } catch (error) {
+            Logger.error(`Error reconciling my_positions: ${formatError(error)}`);
+        }
         if (!isRunning) break;
         await new Promise((resolve) => setTimeout(resolve, FETCH_INTERVAL * 1000));
     }
