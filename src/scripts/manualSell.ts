@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { OrderSide } from '@polymarket/client';
 import { updateBalanceAllowance } from '@polymarket/client/actions';
 import { AssetType } from '@polymarket/bindings/clob';
@@ -318,6 +319,17 @@ async function main() {
     console.log(`📊 Sell percentage: ${(sellPercentage * 100).toFixed(0)}%\n`);
 
     try {
+        // recordSellFill (called from sellPosition, via postOrder.ts) writes
+        // to the my_positions collection through Mongoose's default
+        // connection — unlike the live bot (connected once at startup in
+        // index.ts), this standalone script has no connection unless it
+        // makes one itself. Without this, a real sell still succeeds, but
+        // the my_positions write times out and silently fails (Mongoose
+        // queues operations on a disconnected model until
+        // bufferTimeoutMS, then rejects), leaving my_positions stale for
+        // this fill until the next reconciliation tick in tradeMonitor.ts.
+        await mongoose.connect(ENV.MONGO_URI);
+
         // Create client
         const clobClient = await createClobClient();
 
@@ -350,6 +362,8 @@ async function main() {
     } catch (error) {
         console.error('\n❌ Fatal error:', error);
         process.exit(1);
+    } finally {
+        await mongoose.disconnect();
     }
 }
 
