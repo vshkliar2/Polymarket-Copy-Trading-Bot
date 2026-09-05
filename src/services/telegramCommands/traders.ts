@@ -12,7 +12,10 @@ export const registerTraderCommands = (ctx: CommandContext): void => {
             const { listTraders } = await import('../trackedTraders');
             const traders = await listTraders('active');
             if (traders.length === 0) {
-                await ctx.sendMessage('No active tracked traders.');
+                await ctx.sendMessage('No active tracked traders.', {
+                    parse_mode: 'HTML',
+                    disable_web_page_preview: true,
+                });
                 return;
             }
             const lines = traders.map(
@@ -21,10 +24,13 @@ export const registerTraderCommands = (ctx: CommandContext): void => {
             );
             await ctx.sendMessage(
                 `<b>Active Traders (${traders.length})</b>\n\n${lines.join('\n')}`,
-                { parse_mode: 'HTML' }
+                { parse_mode: 'HTML', disable_web_page_preview: true }
             );
         } catch (error) {
-            await ctx.sendMessage(`❌ Error listing traders: ${formatError(error)}`);
+            await ctx.sendMessage(`❌ Error listing traders: ${formatError(error)}`, {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            });
         }
     });
 
@@ -36,7 +42,10 @@ export const registerTraderCommands = (ctx: CommandContext): void => {
             const { listTraders } = await import('../trackedTraders');
             const traders = await listTraders('pending');
             if (traders.length === 0) {
-                await ctx.sendMessage('No pending trader candidates.');
+                await ctx.sendMessage('No pending trader candidates.', {
+                    parse_mode: 'HTML',
+                    disable_web_page_preview: true,
+                });
                 return;
             }
             const lines = traders.map(
@@ -45,10 +54,13 @@ export const registerTraderCommands = (ctx: CommandContext): void => {
             );
             await ctx.sendMessage(
                 `<b>Pending Candidates (${traders.length})</b>\n\n${lines.join('\n')}`,
-                { parse_mode: 'HTML' }
+                { parse_mode: 'HTML', disable_web_page_preview: true }
             );
         } catch (error) {
-            await ctx.sendMessage(`❌ Error listing pending traders: ${formatError(error)}`);
+            await ctx.sendMessage(`❌ Error listing pending traders: ${formatError(error)}`, {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            });
         }
     });
 
@@ -58,7 +70,10 @@ export const registerTraderCommands = (ctx: CommandContext): void => {
         }
         const address = match?.[1]?.trim();
         if (!address) {
-            await ctx.sendMessage('Usage: /add 0xADDRESS');
+            await ctx.sendMessage('Usage: /add 0xADDRESS', {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            });
             return;
         }
         try {
@@ -66,9 +81,13 @@ export const registerTraderCommands = (ctx: CommandContext): void => {
             await addManualTrader(address, String(msg.from?.id ?? 'telegram'));
             await ctx.sendMessage(`✅ Added <code>${address}</code> to active traders.`, {
                 parse_mode: 'HTML',
+                disable_web_page_preview: true,
             });
         } catch (error) {
-            await ctx.sendMessage(`❌ ${formatError(error)}`);
+            await ctx.sendMessage(`❌ ${formatError(error)}`, {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            });
         }
     });
 
@@ -78,7 +97,10 @@ export const registerTraderCommands = (ctx: CommandContext): void => {
         }
         const address = match?.[1]?.trim();
         if (!address) {
-            await ctx.sendMessage('Usage: /remove 0xADDRESS');
+            await ctx.sendMessage('Usage: /remove 0xADDRESS', {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            });
             return;
         }
         try {
@@ -88,10 +110,13 @@ export const registerTraderCommands = (ctx: CommandContext): void => {
                 removed
                     ? `✅ Removed <code>${address}</code> from active traders.`
                     : `⚠️ <code>${address}</code> was not found or already inactive.`,
-                { parse_mode: 'HTML' }
+                { parse_mode: 'HTML', disable_web_page_preview: true }
             );
         } catch (error) {
-            await ctx.sendMessage(`❌ ${formatError(error)}`);
+            await ctx.sendMessage(`❌ ${formatError(error)}`, {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            });
         }
     });
 };
