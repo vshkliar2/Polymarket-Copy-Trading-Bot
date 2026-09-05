@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { ENV } from '../config/env';
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
 const RPC_URL = ENV.RPC_URL;
@@ -99,9 +99,7 @@ async function computeGnosisSafeAddress() {
                                     console.log(`   Proxy адрес: ${proxyAddress}\n`);
 
                                     // Проверяем позиции
-                                    const positions: any[] = await fetchData(
-                                        `https://data-api.polymarket.com/positions?user=${proxyAddress}`
-                                    );
+                                    const positions = await publicClient.getPositions(proxyAddress);
 
                                     console.log(`   Позиций на Proxy: ${positions?.length || 0}\n`);
 
@@ -177,9 +175,7 @@ async function computeGnosisSafeAddress() {
                 }
 
                 // Проверяем позиции
-                const positions: any[] = await fetchData(
-                    `https://data-api.polymarket.com/positions?user=${suspectAddress}`
-                );
+                const positions = await publicClient.getPositions(suspectAddress);
 
                 console.log(`\n   Позиций на этом адресе: ${positions?.length || 0}\n`);
 

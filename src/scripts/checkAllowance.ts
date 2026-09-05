@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { AssetType } from '@polymarket/bindings/clob';
 import { fetchBalanceAllowance, updateBalanceAllowance } from '@polymarket/client/actions';
 import { ENV } from '../config/env';
-import createClobClient from '../utils/createClobClient';
+import secureClient from '../utils/secureClient';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
@@ -47,7 +47,7 @@ const syncPolymarketAllowanceCache = async (decimals: number) => {
 
         let clobClient;
         try {
-            clobClient = await createClobClient();
+            clobClient = await secureClient();
         } catch (error) {
             console.log(
                 `⚠️  Unable to create authenticated client: ${error instanceof Error ? error.message : String(error)}`

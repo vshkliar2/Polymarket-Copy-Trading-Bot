@@ -1,5 +1,5 @@
 import { ENV } from '../config/env';
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 import getMyBalance from '../utils/getMyBalance';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
@@ -52,8 +52,9 @@ const checkMyStats = async () => {
 
         // 2. Open Positions
         console.log('📊 OPEN POSITIONS');
-        const positionsUrl = `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`;
-        const positions: Position[] = await fetchData(positionsUrl);
+        const positions = (await publicClient.getPositions(
+            MY_EOA_ADDRESS
+        )) as unknown as Position[];
 
         if (positions && positions.length > 0) {
             console.log(`   Total positions: ${positions.length}\n`);
@@ -106,8 +107,9 @@ const checkMyStats = async () => {
         // 3. Trade History (last 50)
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
         console.log('📜 TRADE HISTORY (last 20)\n');
-        const activityUrl = `https://data-api.polymarket.com/activity?user=${MY_EOA_ADDRESS}&type=TRADE`;
-        const activities: Activity[] = await fetchData(activityUrl);
+        const activities = (await publicClient.getTradeActivity(
+            MY_EOA_ADDRESS
+        )) as unknown as Activity[];
 
         if (activities && activities.length > 0) {
             console.log(`   Total trades in API: ${activities.length}\n`);

@@ -1,5 +1,5 @@
 import { ENV } from '../config/env';
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
@@ -48,8 +48,9 @@ const checkDiscrepancy = async () => {
         // 1. Get all positions (open and closed)
         console.log('📊 Fetching data from Polymarket API...\n');
 
-        const positionsUrl = `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`;
-        const positions: Position[] = await fetchData(positionsUrl);
+        const positions = (await publicClient.getPositions(
+            MY_EOA_ADDRESS
+        )) as unknown as Position[];
 
         console.log(`Fetched positions: ${positions.length}\n`);
 
@@ -134,8 +135,9 @@ const checkDiscrepancy = async () => {
 
         // 6. Check through trade history
         console.log('🔎 CHECK THROUGH TRADE HISTORY:\n');
-        const activityUrl = `https://data-api.polymarket.com/activity?user=${MY_EOA_ADDRESS}&type=TRADE`;
-        const activities: Activity[] = await fetchData(activityUrl);
+        const activities = (await publicClient.getTradeActivity(
+            MY_EOA_ADDRESS
+        )) as unknown as Activity[];
 
         // Group trades by markets
         const marketTrades = new Map<string, { buys: Activity[]; sells: Activity[] }>();

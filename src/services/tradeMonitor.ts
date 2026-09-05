@@ -1,5 +1,5 @@
 import { ENV } from '../config/env';
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 import Logger from '../utils/logger';
 import {
     calculatePositionStats,
@@ -353,16 +353,24 @@ const fetchTradeDataForTrader = async ({
 }: TraderModelConfig): Promise<void> => {
     try {
         // Fetch trade activities from Polymarket API
-        const apiUrl = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE`;
-        const activities = (await fetchData(apiUrl)) as Array<Record<string, unknown>>;
+        const activities = await publicClient.getTradeActivity(address);
 
-        if (!Array.isArray(activities) || activities.length === 0) {
+        if (activities.length === 0) {
             return;
         }
 
-        // Process each activity
+        // Process each activity. processNewTrade takes Record<string, unknown>
+        // (not UserActivityInterface) deliberately — it does its own
+        // typeof/String() coercion per field since this is third-party API
+        // data whose actual runtime shape isn't guaranteed by publicClient's
+        // return type, which is itself just an unchecked cast, not real
+        // validation.
         for (const activity of activities) {
-            await processNewTrade(activity, address, UserActivity);
+            await processNewTrade(
+                activity as unknown as Record<string, unknown>,
+                address,
+                UserActivity
+            );
         }
 
         // Update positions

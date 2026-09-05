@@ -9,15 +9,15 @@ import { UserPositionInterface } from '../interfaces/User';
 import { diffTraderAddresses, getActiveTraderAddresses } from './trackedTraders';
 import { onNewTrade, NewTradePayload } from './tradeEvents';
 import { formatError } from '../utils/errorHelpers';
-import type createClobClient from '../utils/createClobClient';
+import type secureClient from '../utils/secureClient';
 
 /**
- * The authenticated client returned by createClobClient(). Defined
+ * The authenticated client returned by secureClient(). Defined
  * independently from the identical alias in postOrder.ts (not exported
- * there) — deriving from createClobClient's own return type keeps both in
+ * there) — deriving from secureClient's own return type keeps both in
  * sync with its signature without either file importing from the other.
  */
-type SecureClientType = Awaited<ReturnType<typeof createClobClient>>;
+type SecureClientType = Awaited<ReturnType<typeof secureClient>>;
 
 // Safety-net poll interval: catches anything an event might have missed
 // (a crash between save() and emit, a trade inserted outside the normal

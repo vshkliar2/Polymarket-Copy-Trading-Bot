@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { ENV } from '../config/env';
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
 const RPC_URL = ENV.RPC_URL;
@@ -37,9 +37,7 @@ async function transferPositions() {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     console.log('📋 ШАГ 1: Получение позиций на EOA\n');
 
-    const positions: Position[] = await fetchData(
-        `https://data-api.polymarket.com/positions?user=${EOA_ADDRESS}`
-    );
+    const positions = (await publicClient.getPositions(EOA_ADDRESS)) as unknown as Position[];
 
     if (!positions || positions.length === 0) {
         console.log('❌ Нет позиций на EOA для переноса\n');
@@ -181,13 +179,13 @@ async function transferPositions() {
     console.log('⏳ Ждем 5 секунд для обновления данных API...\n');
     await new Promise((resolve) => setTimeout(resolve, 5000));
 
-    const eoaPositionsAfter: Position[] = await fetchData(
-        `https://data-api.polymarket.com/positions?user=${EOA_ADDRESS}`
-    );
+    const eoaPositionsAfter = (await publicClient.getPositions(
+        EOA_ADDRESS
+    )) as unknown as Position[];
 
-    const gnosisPositionsAfter: Position[] = await fetchData(
-        `https://data-api.polymarket.com/positions?user=${GNOSIS_SAFE_ADDRESS}`
-    );
+    const gnosisPositionsAfter = (await publicClient.getPositions(
+        GNOSIS_SAFE_ADDRESS
+    )) as unknown as Position[];
 
     console.log('📊 ПОСЛЕ ПЕРЕНОСА:\n');
     console.log(`   EOA:          ${eoaPositionsAfter?.length || 0} позиций`);

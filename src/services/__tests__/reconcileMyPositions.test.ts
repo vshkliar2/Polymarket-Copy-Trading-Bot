@@ -46,6 +46,27 @@ jest.mock('../../utils/errorHelpers', () => ({
     isInsufficientBalanceOrAllowanceCode: () => false,
 }));
 
+// positionHelpers.ts's fetchAllPositions is a module-level binding
+// (`= publicClient.getAllPositions`), evaluated when the module loads — so
+// even with fetchMyPositionsAndBalance mocked below, jest.requireActual
+// still has to load the real positionHelpers.ts, which imports
+// publicClient.ts, which runtime-imports @polymarket/client (ESM-only, same
+// issue as errorHelpers/logger above). Mocking publicClient here avoids
+// that load-time import entirely; nothing in this test calls its methods
+// directly.
+jest.mock('../../utils/publicClient', () => ({
+    __esModule: true,
+    default: {
+        getPositions: jest.fn(),
+        getAllPositions: jest.fn(),
+        getClosedPositions: jest.fn(),
+        getTradeActivity: jest.fn(),
+        getLeaderboard: jest.fn(),
+        getTrades: jest.fn(),
+        getUserProfile: jest.fn(),
+    },
+}));
+
 jest.mock('../../utils/positionHelpers', () => {
     const actual = jest.requireActual('../../utils/positionHelpers');
     return {

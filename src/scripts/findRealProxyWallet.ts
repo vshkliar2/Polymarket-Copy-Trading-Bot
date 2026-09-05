@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { ENV } from '../config/env';
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
 const RPC_URL = ENV.RPC_URL;
@@ -21,7 +21,7 @@ async function findRealProxyWallet() {
 
     try {
         // Пробуем получить профиль пользователя
-        const userProfile = await fetchData(`https://data-api.polymarket.com/users/${eoaAddress}`);
+        const userProfile = await publicClient.getUserProfile(eoaAddress);
 
         console.log('   Данные профиля:', JSON.stringify(userProfile, null, 2), '\n');
     } catch (error) {
@@ -86,8 +86,8 @@ async function findRealProxyWallet() {
                                         console.log(`         ✅ Это смарт-контракт!\n`);
 
                                         // Проверяем есть ли позиции на этом адресе
-                                        const positions: any[] = await fetchData(
-                                            `https://data-api.polymarket.com/positions?user=${log.address}`
+                                        const positions = await publicClient.getPositions(
+                                            log.address
                                         );
 
                                         if (positions && positions.length > 0) {
@@ -167,9 +167,7 @@ async function findRealProxyWallet() {
             console.log('   Проверяю получателей на н��личие позиций...\n');
 
             for (const recipient of Array.from(recipients).slice(0, 5)) {
-                const positions: any[] = await fetchData(
-                    `https://data-api.polymarket.com/positions?user=${recipient}`
-                );
+                const positions = await publicClient.getPositions(recipient);
 
                 if (positions && positions.length > 0) {
                     console.log(`   🎯 Адрес с позициями: ${recipient}`);

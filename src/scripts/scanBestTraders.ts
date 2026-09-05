@@ -132,9 +132,9 @@ async function fetchActiveMarkets(limit: number = 50): Promise<any[]> {
 
         // Use CLOB API or alternative approach - get activity from known seed traders
         const seedTraders = [
-            '0x7c3db723f1d4d8cb9c550095203b686cb11e5c6b',
-            '0x6bab41a0dc40d6dd4c1a915b8c01969479fd1292',
-            '0xa4b366ad22fc0d06f1e934ff468e8922431a87b8',
+            '0xd570e634aeb745d6501566dba5f81a555cc7e4f8',
+            '0x2005d16a84ceefa912d4e380cd32e7ff827875ea',
+            '0x204f72f35326db932158cba6adff0b9a1da95e14',
         ];
 
         const markets = new Map<string, any>();
@@ -222,11 +222,9 @@ async function scanTradersFromBets(): Promise<Map<string, TraderStats>> {
 
     // Seed traders - we'll use these to discover more traders from their activity
     const seedTraders = [
-        '0x7c3db723f1d4d8cb9c550095203b686cb11e5c6b',
-        '0x6bab41a0dc40d6dd4c1a915b8c01969479fd1292',
-        '0xa4b366ad22fc0d06f1e934ff468e8922431a87b8',
-        '0x1d6f28dd53759f7ecf4a8e72dd890bcd2e42f766',
-        '0x2a76e6c3f5b6f2e5e5c8f4b2e5e5c8f4b2e5e5c8',
+        '0xd570e634aeb745d6501566dba5f81a555cc7e4f8',
+        '0x2005d16a84ceefa912d4e380cd32e7ff827875ea',
+        '0x204f72f35326db932158cba6adff0b9a1da95e14',
     ];
 
     console.log(

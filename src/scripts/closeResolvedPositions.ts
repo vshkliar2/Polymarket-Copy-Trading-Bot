@@ -2,18 +2,18 @@ import { OrderSide, OrderType } from '@polymarket/client';
 import { updateBalanceAllowance } from '@polymarket/client/actions';
 import { AssetType } from '@polymarket/bindings/clob';
 import { ENV } from '../config/env';
-import createClobClient from '../utils/createClobClient';
-import fetchData from '../utils/fetchData';
+import secureClient from '../utils/secureClient';
+import publicClient from '../utils/publicClient';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
 import { isInsufficientBalanceOrAllowanceCode } from '../utils/errorHelpers';
 
 /**
- * The authenticated client returned by createClobClient(). @polymarket/client's
+ * The authenticated client returned by secureClient(). @polymarket/client's
  * SecureClient is a large structural type with ~60 action-bound methods whose
  * generic parameters are inferred, not meant to be written by hand — deriving
- * the alias from createClobClient's own return type keeps it in sync.
+ * the alias from secureClient's own return type keeps it in sync.
  */
-type SecureClientType = Awaited<ReturnType<typeof createClobClient>>;
+type SecureClientType = Awaited<ReturnType<typeof secureClient>>;
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
@@ -153,9 +153,7 @@ const sellEntirePosition = async (
 };
 
 const loadPositions = async (address: string): Promise<Position[]> => {
-    const url = `https://data-api.polymarket.com/positions?user=${address}`;
-    const data = await fetchData(url);
-    const positions = Array.isArray(data) ? (data as Position[]) : [];
+    const positions = (await publicClient.getPositions(address)) as unknown as Position[];
     return positions.filter((pos) => (pos.size || 0) > ZERO_THRESHOLD);
 };
 
@@ -185,7 +183,7 @@ const main = async () => {
     console.log(`Win threshold: price >= $${RESOLVED_HIGH}`);
     console.log(`Loss threshold: price <= $${RESOLVED_LOW}`);
 
-    const clobClient = await createClobClient();
+    const clobClient = await secureClient();
     console.log('✅ Connected to Polymarket CLOB');
 
     const allPositions = await loadPositions(MY_EOA_ADDRESS);

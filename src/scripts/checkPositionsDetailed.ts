@@ -1,4 +1,4 @@
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 interface Position {
@@ -22,9 +22,7 @@ interface Position {
 async function checkPositions() {
     console.log('\n📊 CURRENT POSITIONS:\n');
 
-    const positions: Position[] = await fetchData(
-        `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`
-    );
+    const positions = (await publicClient.getPositions(MY_EOA_ADDRESS)) as unknown as Position[];
 
     if (!positions || positions.length === 0) {
         console.log('❌ No open positions');

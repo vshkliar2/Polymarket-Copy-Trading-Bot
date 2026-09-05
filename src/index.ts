@@ -1,6 +1,6 @@
 import connectDB, { closeDB } from './config/db';
 import { ENV } from './config/env';
-import createClobClient from './utils/createClobClient';
+import secureClient from './utils/secureClient';
 import tradeExecutor, { stopTradeExecutor } from './services/tradeExecutor';
 import tradeMonitor, { stopTradeMonitor } from './services/tradeMonitor';
 import websocketTradeMonitor, { stopWebSocketTradeMonitor } from './services/websocketTradeMonitor';
@@ -147,7 +147,7 @@ export const main = async (): Promise<void> => {
         }
 
         Logger.info('Initializing CLOB client...');
-        const clobClient = await createClobClient();
+        const clobClient = await secureClient();
         Logger.success('CLOB client ready');
 
         Logger.separator();

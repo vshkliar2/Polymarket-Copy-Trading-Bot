@@ -1,4 +1,4 @@
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 // data-api's /activity endpoint is keyed by the signing EOA address, not
@@ -21,8 +21,7 @@ interface Activity {
 }
 
 const main = async () => {
-    const url = `https://data-api.polymarket.com/activity?user=${WALLET}&type=TRADE`;
-    const activities: Activity[] = await fetchData(url);
+    const activities = (await publicClient.getTradeActivity(WALLET)) as unknown as Activity[];
 
     if (!Array.isArray(activities) || activities.length === 0) {
         console.log('No trade data available');

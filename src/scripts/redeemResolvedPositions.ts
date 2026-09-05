@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { ENV } from '../config/env';
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
@@ -39,9 +39,7 @@ const CTF_ABI = [
 ];
 
 const loadPositions = async (address: string): Promise<Position[]> => {
-    const url = `https://data-api.polymarket.com/positions?user=${address}`;
-    const data = await fetchData(url);
-    const positions = Array.isArray(data) ? (data as Position[]) : [];
+    const positions = (await publicClient.getPositions(address)) as unknown as Position[];
     return positions.filter((pos) => (pos.size || 0) > ZERO_THRESHOLD);
 };
 

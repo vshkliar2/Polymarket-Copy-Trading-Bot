@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { ENV } from '../config/env';
 import getMyBalance from './getMyBalance';
-import fetchData from './fetchData';
+import publicClient from './publicClient';
 import Logger from './logger';
 
 export interface HealthCheckResult {
@@ -109,9 +109,7 @@ export const performHealthCheck = async (): Promise<HealthCheckResult> => {
 
     // Check Polymarket API
     try {
-        const testUrl =
-            'https://data-api.polymarket.com/positions?user=0x0000000000000000000000000000000000000000';
-        await fetchData(testUrl);
+        await publicClient.getPositions('0x0000000000000000000000000000000000000000');
         checks.polymarketApi = { status: 'ok', message: 'API responding' };
     } catch (error) {
         checks.polymarketApi = {

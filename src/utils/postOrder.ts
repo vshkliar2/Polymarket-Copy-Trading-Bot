@@ -10,15 +10,15 @@ import { calculateOrderSize, getTradeMultiplier } from '../config/copyStrategy';
 import { isInsufficientBalanceOrAllowanceCode } from './errorHelpers';
 import TelegramNotifier from '../services/telegramNotifier';
 import { checkMarketPositionLimit, checkMarketEndDate } from './portfolioManager';
-import type createClobClient from './createClobClient';
+import type secureClient from './secureClient';
 
 /**
- * The authenticated client returned by createClobClient(). @polymarket/client's
+ * The authenticated client returned by secureClient(). @polymarket/client's
  * SecureClient is a large structural type with ~60 action-bound methods whose
  * generic parameters are inferred, not meant to be written by hand — deriving
- * the alias from createClobClient's own return type keeps it in sync.
+ * the alias from secureClient's own return type keeps it in sync.
  */
-type SecureClientType = Awaited<ReturnType<typeof createClobClient>>;
+type SecureClientType = Awaited<ReturnType<typeof secureClient>>;
 
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 const COPY_STRATEGY_CONFIG = ENV.COPY_STRATEGY_CONFIG;

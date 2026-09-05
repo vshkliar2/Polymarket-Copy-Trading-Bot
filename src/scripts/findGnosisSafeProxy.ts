@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { ENV } from '../config/env';
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
 const RPC_URL = ENV.RPC_URL;
@@ -24,9 +24,7 @@ async function findGnosisSafeProxy() {
     console.log('📋 ШАГ 2: Позиции на EOA адресе\n');
 
     try {
-        const eoaPositions: any[] = await fetchData(
-            `https://data-api.polymarket.com/positions?user=${eoaAddress}`
-        );
+        const eoaPositions = await publicClient.getPositions(eoaAddress);
         console.log(`   Позиций: ${eoaPositions?.length || 0}\n`);
 
         if (eoaPositions && eoaPositions.length > 0) {
@@ -41,9 +39,7 @@ async function findGnosisSafeProxy() {
     console.log('📋 ШАГ 3: Ищем Gnosis Safe Proxy через транзакции\n');
 
     try {
-        const activities: any[] = await fetchData(
-            `https://data-api.polymarket.com/activity?user=${eoaAddress}&type=TRADE`
-        );
+        const activities = await publicClient.getTradeActivity(eoaAddress);
 
         if (activities && activities.length > 0) {
             const firstTrade = activities[0];
@@ -57,9 +53,7 @@ async function findGnosisSafeProxy() {
                 console.log(`   Proxy адрес: ${proxyWalletFromTrade}\n`);
 
                 // Проверяем позиции на proxy
-                const proxyPositions: any[] = await fetchData(
-                    `https://data-api.polymarket.com/positions?user=${proxyWalletFromTrade}`
-                );
+                const proxyPositions = await publicClient.getPositions(proxyWalletFromTrade);
 
                 console.log(`   Позиций на Proxy: ${proxyPositions?.length || 0}\n`);
 

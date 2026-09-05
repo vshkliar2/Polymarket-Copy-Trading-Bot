@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { ENV } from '../config/env';
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
 const PROXY_WALLET = ENV.PROXY_WALLET;
@@ -58,16 +58,12 @@ async function analyzeWallets() {
     console.log('📋 ШАГ 4: Активность на Polymarket\n');
 
     try {
-        const proxyPositions: any[] = await fetchData(
-            `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`
-        );
+        const proxyPositions = await publicClient.getPositions(PROXY_WALLET);
         console.log(`   PROXY_WALLET (${PROXY_WALLET.slice(0, 10)}...):`);
         console.log(`   • Позиций: ${proxyPositions?.length || 0}\n`);
 
         if (eoaAddress.toLowerCase() !== PROXY_WALLET.toLowerCase()) {
-            const eoaPositions: any[] = await fetchData(
-                `https://data-api.polymarket.com/positions?user=${eoaAddress}`
-            );
+            const eoaPositions = await publicClient.getPositions(eoaAddress);
             console.log(`   EOA (${eoaAddress.slice(0, 10)}...):`);
             console.log(`   • Позиций: ${eoaPositions?.length || 0}\n`);
         }
@@ -80,9 +76,7 @@ async function analyzeWallets() {
     console.log('📋 ШАГ 5: Проверка proxyWallet в транзакциях\n');
 
     try {
-        const activities: any[] = await fetchData(
-            `https://data-api.polymarket.com/activity?user=${PROXY_WALLET}&type=TRADE`
-        );
+        const activities = await publicClient.getTradeActivity(PROXY_WALLET);
 
         if (activities && activities.length > 0) {
             const firstTrade = activities[0];

@@ -10,7 +10,7 @@
  *   npm run discover-traders -- --min-pnl=10000 --min-winrate=60
  */
 
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 import Logger from '../utils/logger';
 
 // ============================================================================
@@ -92,10 +92,9 @@ export interface DiscoveryOptions {
  */
 async function fetchLeaderboard(limit: number = 100): Promise<LeaderboardEntry[]> {
     try {
-        const url = `https://data-api.polymarket.com/leaderboard?window=all&limit=${limit}`;
         Logger.info(`Fetching leaderboard (top ${limit})...`);
 
-        const data = (await fetchData(url)) as any[];
+        const data = await publicClient.getLeaderboard(limit);
 
         return data.map((entry: any) => ({
             address: entry.user || entry.address,
@@ -115,12 +114,7 @@ async function fetchLeaderboard(limit: number = 100): Promise<LeaderboardEntry[]
  */
 async function fetchTraderPositions(address: string): Promise<TraderPosition[]> {
     try {
-        const url = `https://data-api.polymarket.com/positions?user=${address}`;
-        const data = (await fetchData(url)) as any[];
-
-        if (!Array.isArray(data)) {
-            return [];
-        }
+        const data = await publicClient.getPositions(address);
 
         return data.map((pos: any) => ({
             conditionId: pos.conditionId,
@@ -143,12 +137,7 @@ async function fetchTraderPositions(address: string): Promise<TraderPosition[]> 
  */
 async function fetchTraderTrades(address: string, limit: number = 100): Promise<TraderTrade[]> {
     try {
-        const url = `https://data-api.polymarket.com/trades?user=${address}&limit=${limit}`;
-        const data = (await fetchData(url)) as any[];
-
-        if (!Array.isArray(data)) {
-            return [];
-        }
+        const data = await publicClient.getTrades({ userAddress: address, limit });
 
         return data.map((trade: any) => ({
             timestamp: parseInt(trade.timestamp || 0),

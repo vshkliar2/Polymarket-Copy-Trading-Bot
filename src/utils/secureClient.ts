@@ -22,11 +22,11 @@ const PRIVATE_KEY_WITH_PREFIX = PRIVATE_KEY.startsWith('0x') ? PRIVATE_KEY : `0x
  * address alone — unlike @polymarket/clob-client-v2, no manual bytecode
  * probing or SignatureTypeV2 selection is needed here.
  */
-const createClobClient = async () => {
+const secureClient = async () => {
     return createSecureClient({
         wallet: PROXY_WALLET,
         signer: privateKey(PRIVATE_KEY_WITH_PREFIX),
     });
 };
 
-export default createClobClient;
+export default secureClient;

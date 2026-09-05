@@ -8,7 +8,7 @@ import {
     fetchUserPositionsAndBalance,
 } from '../utils/positionHelpers';
 import { formatError } from '../utils/errorHelpers';
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 import {
     diffTraderAddresses,
     getActiveTraderAddresses,
@@ -281,15 +281,21 @@ const fetchTradeDataForTrader = async ({
     UserPosition,
 }: TraderModelConfig): Promise<void> => {
     try {
-        const apiUrl = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE`;
-        const activities = (await fetchData(apiUrl)) as Array<Record<string, unknown>>;
+        const activities = await publicClient.getTradeActivity(address);
 
-        if (!Array.isArray(activities) || activities.length === 0) {
+        if (activities.length === 0) {
             return;
         }
 
+        // processNewTrade takes Record<string, unknown> (not
+        // UserActivityInterface) deliberately — see tradeMonitor.ts's
+        // identical comment for why.
         for (const activity of activities) {
-            await processNewTrade(activity, address, UserActivity);
+            await processNewTrade(
+                activity as unknown as Record<string, unknown>,
+                address,
+                UserActivity
+            );
         }
 
         await updateTraderPositions(address, UserPosition);

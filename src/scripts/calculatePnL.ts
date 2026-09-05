@@ -1,5 +1,5 @@
 import { ENV } from '../config/env';
-import fetchData from '../utils/fetchData';
+import publicClient from '../utils/publicClient';
 import getMyBalance from '../utils/getMyBalance';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
 
@@ -67,24 +67,14 @@ const calculatePnL = async (): Promise<void> => {
         // Fetch all data
         console.log('📊 Fetching data from Polymarket API...\n');
 
-        const [openPositionsData, closedPositionsData, activities, usdcBalance] = await Promise.all(
-            [
-                fetchData(
-                    `https://data-api.polymarket.com/positions?user=${MY_EOA_ADDRESS}`
-                ) as Promise<Position[]>,
-                fetchData(
-                    `https://data-api.polymarket.com/closed-positions?user=${MY_EOA_ADDRESS}`
-                ) as Promise<Position[]>,
-                fetchData(
-                    `https://data-api.polymarket.com/activity?user=${MY_EOA_ADDRESS}&type=TRADE`
-                ) as Promise<Activity[]>,
-                getMyBalance(PROXY_WALLET),
-            ]
-        );
+        const [openPositions, closedPositions, activities, usdcBalance] = await Promise.all([
+            publicClient.getPositions(MY_EOA_ADDRESS) as unknown as Promise<Position[]>,
+            publicClient.getClosedPositions(MY_EOA_ADDRESS) as unknown as Promise<Position[]>,
+            publicClient.getTradeActivity(MY_EOA_ADDRESS) as unknown as Promise<Activity[]>,
+            getMyBalance(PROXY_WALLET),
+        ]);
 
         // Use the data directly - API already separates them
-        const openPositions = Array.isArray(openPositionsData) ? openPositionsData : [];
-        const closedPositions = Array.isArray(closedPositionsData) ? closedPositionsData : [];
         const positions = [...openPositions, ...closedPositions];
 
         // Calculate unrealized P&L from open positions

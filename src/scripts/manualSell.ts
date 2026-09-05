@@ -4,17 +4,17 @@ import { updateBalanceAllowance } from '@polymarket/client/actions';
 import { AssetType } from '@polymarket/bindings/clob';
 import { ENV } from '../config/env';
 import MY_EOA_ADDRESS from '../utils/getMyEOA';
-import createClobClient from '../utils/createClobClient';
+import secureClient from '../utils/secureClient';
 import { submitOrder, recordSellFill } from '../utils/postOrder';
 import { isInsufficientBalanceOrAllowanceCode } from '../utils/errorHelpers';
 
 /**
- * The authenticated client returned by createClobClient(). @polymarket/client's
+ * The authenticated client returned by secureClient(). @polymarket/client's
  * SecureClient is a large structural type with ~60 action-bound methods whose
  * generic parameters are inferred, not meant to be written by hand — deriving
- * the alias from createClobClient's own return type keeps it in sync.
+ * the alias from secureClient's own return type keeps it in sync.
  */
-type SecureClientType = Awaited<ReturnType<typeof createClobClient>>;
+type SecureClientType = Awaited<ReturnType<typeof secureClient>>;
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
@@ -331,7 +331,7 @@ async function main() {
         await mongoose.connect(ENV.MONGO_URI);
 
         // Create client
-        const clobClient = await createClobClient();
+        const clobClient = await secureClient();
 
         console.log('✅ Connected to Polymarket\n');
 

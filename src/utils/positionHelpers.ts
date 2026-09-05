@@ -1,42 +1,21 @@
-import { UserPositionInterface } from '../interfaces/User';
-import fetchData from './fetchData';
+import type { ApiPosition } from './publicClient';
+import publicClient from './publicClient';
 import getMyBalance from './getMyBalance';
 import MY_EOA_ADDRESS from './getMyEOA';
 import { ENV } from '../config/env';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 
-// Polymarket's /positions endpoint's own maximum page size (its default is
-// 100, silently truncating without this).
-const POSITIONS_PAGE_LIMIT = 500;
-
 /**
- * Fetch every position for `userAddress`, paging through the /positions
- * endpoint via `limit`/`offset` until a short page signals the last one.
- * Without this, callers that need a user's FULL position list (as opposed
- * to fetchPositionForMarket's single-market lookup below) would silently
- * see only the endpoint's default first 100 positions — sorted
- * largest-position-first by default, so it's specifically the smaller
- * positions, or anything past the 100th, that go missing.
+ * Fetch every position for `userAddress`. Without this, callers that need a
+ * user's FULL position list (as opposed to fetchPositionForMarket's
+ * single-market lookup below) would silently see only a single page's worth
+ * — sorted largest-position-first by default, so it's specifically the
+ * smaller positions, or anything past the first page, that would go
+ * missing. publicClient.getAllPositions drives the SDK's own cursor-based
+ * pagination internally; this file no longer needs its own offset loop.
  */
-const fetchAllPositions = async (userAddress: string): Promise<UserPositionInterface[]> => {
-    const allPositions: UserPositionInterface[] = [];
-    let offset = 0;
-
-    for (;;) {
-        const positionsUrl = `https://data-api.polymarket.com/positions?user=${userAddress}&limit=${POSITIONS_PAGE_LIMIT}&offset=${offset}`;
-        const page = (await fetchData(positionsUrl)) as UserPositionInterface[];
-        const pageArray = Array.isArray(page) ? page : [];
-        allPositions.push(...pageArray);
-
-        if (pageArray.length < POSITIONS_PAGE_LIMIT) {
-            break;
-        }
-        offset += POSITIONS_PAGE_LIMIT;
-    }
-
-    return allPositions;
-};
+const fetchAllPositions = publicClient.getAllPositions;
 
 /**
  * Position statistics for a trader
@@ -54,7 +33,7 @@ export interface PositionStats {
  * @param positions - Array of positions to analyze
  * @returns Calculated position statistics
  */
-export const calculatePositionStats = (positions: UserPositionInterface[]): PositionStats => {
+export const calculatePositionStats = (positions: ApiPosition[]): PositionStats => {
     let totalValue = 0;
     let initialValue = 0;
     let weightedPnl = 0;
@@ -88,7 +67,7 @@ export const calculatePositionStats = (positions: UserPositionInterface[]): Posi
 export const fetchUserPositionsAndBalance = async (
     userAddress: string
 ): Promise<{
-    positions: UserPositionInterface[];
+    positions: ApiPosition[];
     balance: number;
 }> => {
     const positionsArray = await fetchAllPositions(userAddress);
@@ -112,7 +91,7 @@ export const fetchUserPositionsAndBalance = async (
  * @returns Object containing my positions and USDC balance
  */
 export const fetchMyPositionsAndBalance = async (): Promise<{
-    positions: UserPositionInterface[];
+    positions: ApiPosition[];
     usdcBalance: number;
     totalBalance: number;
 }> => {
@@ -143,9 +122,9 @@ export const fetchMyPositionsAndBalance = async (): Promise<{
  * @returns Found position or undefined
  */
 export const findPositionByConditionId = (
-    positions: UserPositionInterface[],
+    positions: ApiPosition[],
     conditionId: string
-): UserPositionInterface | undefined => {
+): ApiPosition | undefined => {
     return positions.find((position) => position.conditionId === conditionId);
 };
 
@@ -183,9 +162,7 @@ export const findPositionByConditionId = (
 export const fetchPositionForMarket = async (
     userAddress: string,
     conditionId: string
-): Promise<UserPositionInterface | undefined> => {
-    const positionsUrl = `https://data-api.polymarket.com/positions?user=${userAddress}&market=${conditionId}`;
-    const positions = (await fetchData(positionsUrl)) as UserPositionInterface[];
-    const positionsArray = Array.isArray(positions) ? positions : [];
-    return positionsArray[0];
+): Promise<ApiPosition | undefined> => {
+    const positions = await publicClient.getPositions(userAddress, { market: conditionId });
+    return positions[0];
 };

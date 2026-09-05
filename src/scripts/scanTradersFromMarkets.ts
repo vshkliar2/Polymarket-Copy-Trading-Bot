@@ -112,12 +112,9 @@ const TARGET_DISCOVERY_COUNT = parseInt(process.env.TARGET_TRADERS || '1000');
 
 // Seed traders to start discovery - add your known profitable traders here!
 const SEED_TRADERS = [
-    '0x7c3db723f1d4d8cb9c550095203b686cb11e5c6b',
-    '0x6bab41a0dc40d6dd4c1a915b8c01969479fd1292',
-    '0xa4b366ad22fc0d06f1e934ff468e8922431a87b8',
-    // Add more active traders from Polymarket leaderboard
-    '0x000000000000000000000000000000000000dead', // Example - replace with real addresses
-    '0x000000000000000000000000000000000000beef', // Example - replace with real addresses
+    '0xd570e634aeb745d6501566dba5f81a555cc7e4f8',
+    '0x2005d16a84ceefa912d4e380cd32e7ff827875ea',
+    '0x204f72f35326db932158cba6adff0b9a1da95e14',
 ];
 
 // Helper function to validate addresses in parallel
