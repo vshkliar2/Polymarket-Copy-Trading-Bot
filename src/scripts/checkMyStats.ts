@@ -107,9 +107,7 @@ const checkMyStats = async () => {
         // 3. Trade History (last 50)
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
         console.log('📜 TRADE HISTORY (last 20)\n');
-        const activities = (await publicClient.getTradeActivity(
-            MY_EOA_ADDRESS
-        )) as unknown as Activity[];
+        const { items: activities } = await publicClient.getTradeActivity(MY_EOA_ADDRESS);
 
         if (activities && activities.length > 0) {
             console.log(`   Total trades in API: ${activities.length}\n`);

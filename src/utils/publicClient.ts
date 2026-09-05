@@ -217,18 +217,20 @@ const getClosedPositions = async (userAddress: string): Promise<ApiPosition[]> =
  */
 const getTradeActivity = async (
     userAddress: string,
-    options?: { pageSize?: number }
-): Promise<ApiActivity[]> => {
+    options?: { pageSize?: number; cursor?: string }
+): Promise<{ items: ApiActivity[]; nextCursor?: string; hasMore: boolean }> => {
     const page = await client
         .listActivity({
             user: userAddress,
             type: [ActivityType.TRADE],
             pageSize: options?.pageSize,
+            cursor: options?.cursor as Parameters<typeof client.listActivity>[0]['cursor'],
         })
         .firstPage();
-    return page.items
+    const items = page.items
         .map((item) => toUserActivity(item as TradeActivity))
         .filter((activity): activity is ApiActivity => activity !== undefined);
+    return { items, nextCursor: page.nextCursor, hasMore: page.hasMore };
 };
 
 /**

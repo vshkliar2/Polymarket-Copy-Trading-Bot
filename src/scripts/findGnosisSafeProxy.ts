@@ -39,7 +39,7 @@ async function findGnosisSafeProxy() {
     console.log('📋 ШАГ 3: Ищем Gnosis Safe Proxy через транзакции\n');
 
     try {
-        const activities = await publicClient.getTradeActivity(eoaAddress);
+        const { items: activities } = await publicClient.getTradeActivity(eoaAddress);
 
         if (activities && activities.length > 0) {
             const firstTrade = activities[0];

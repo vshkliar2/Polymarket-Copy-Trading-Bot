@@ -37,9 +37,7 @@ const checkProxyWallet = async () => {
 
         // 2. Check activity on EOA
         console.log('🔎 CHECKING ACTIVITY ON MAIN WALLET (EOA):\n');
-        const eoaActivities = (await publicClient.getTradeActivity(
-            eoaAddress
-        )) as unknown as Activity[];
+        const { items: eoaActivities } = await publicClient.getTradeActivity(eoaAddress);
 
         console.log(`   Address: ${eoaAddress}`);
         console.log(`   Trades: ${eoaActivities?.length || 0}`);
@@ -74,9 +72,7 @@ const checkProxyWallet = async () => {
 
         // 3. Check activity on Proxy Wallet
         console.log('🔎 CHECKING ACTIVITY ON PROXY WALLET (CONTRACT):\n');
-        const proxyActivities = (await publicClient.getTradeActivity(
-            PROXY_WALLET
-        )) as unknown as Activity[];
+        const { items: proxyActivities } = await publicClient.getTradeActivity(PROXY_WALLET);
 
         console.log(`   Address: ${PROXY_WALLET}`);
         console.log(`   Trades: ${proxyActivities?.length || 0}`);

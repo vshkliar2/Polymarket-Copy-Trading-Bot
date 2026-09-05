@@ -67,12 +67,13 @@ const calculatePnL = async (): Promise<void> => {
         // Fetch all data
         console.log('📊 Fetching data from Polymarket API...\n');
 
-        const [openPositions, closedPositions, activities, usdcBalance] = await Promise.all([
+        const [openPositions, closedPositions, activityPage, usdcBalance] = await Promise.all([
             publicClient.getPositions(MY_EOA_ADDRESS) as unknown as Promise<Position[]>,
             publicClient.getClosedPositions(MY_EOA_ADDRESS) as unknown as Promise<Position[]>,
-            publicClient.getTradeActivity(MY_EOA_ADDRESS) as unknown as Promise<Activity[]>,
+            publicClient.getTradeActivity(MY_EOA_ADDRESS),
             getMyBalance(PROXY_WALLET),
         ]);
+        const activities = activityPage.items as unknown as Activity[];
 
         // Use the data directly - API already separates them
         const positions = [...openPositions, ...closedPositions];
