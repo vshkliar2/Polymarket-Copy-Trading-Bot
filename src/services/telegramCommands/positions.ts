@@ -4,6 +4,7 @@ import { createEagerPager, PAGE_SIZE } from './pagination';
 import publicClient, { ApiPosition } from '../../utils/publicClient';
 import MY_EOA_ADDRESS from '../../utils/getMyEOA';
 import { formatError } from '../../utils/errorHelpers';
+import { escapeHtml } from './htmlEscape';
 
 export const renderPosition = (p: ApiPosition): string => {
     // toFixed() on a negative number already includes its own "-", so
@@ -16,7 +17,7 @@ export const renderPosition = (p: ApiPosition): string => {
     const percentPrefix = p.percentPnl >= 0 ? '+' : '-';
     const percentAbs = Math.abs(p.percentPnl).toFixed(1);
     return (
-        `<b>${p.title}</b> — ${p.outcome}\n` +
+        `<b>${escapeHtml(p.title)}</b> — ${escapeHtml(p.outcome)}\n` +
         `Size: ${p.size} @ avg $${p.avgPrice.toFixed(2)} | Current: $${p.curPrice.toFixed(3)}\n` +
         `Value: $${p.currentValue.toFixed(2)} | PnL: ${pnlPrefix}${pnlAbs} (${percentPrefix}${percentAbs}%)\n` +
         `🔗 https://polymarket.com/event/${p.slug}`
@@ -60,7 +61,7 @@ export const registerPositionsCommand = (ctx: CommandContext): void => {
 };
 
 export const registerTraderCommand = (ctx: CommandContext): void => {
-    ctx.bot.onText(/\/trader (.+)/, async (msg, match) => {
+    ctx.bot.onText(/^\/trader(?:\s+(.+))?$/, async (msg, match) => {
         if (!ctx.isAuthorized(msg.chat.id)) {
             return;
         }

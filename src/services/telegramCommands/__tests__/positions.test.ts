@@ -71,4 +71,16 @@ describe('renderPosition', () => {
         expect(text).toContain('-$3.38');
         expect(text).not.toContain('+-');
     });
+
+    it('escapes HTML-significant characters in the title and outcome', () => {
+        const text = renderPosition(
+            buildPosition({
+                title: 'Fed cuts & CPI < 3%?',
+                outcome: 'Yes & No',
+            })
+        );
+        expect(text).toContain('Fed cuts &amp; CPI &lt; 3%?');
+        expect(text).toContain('Yes &amp; No');
+        expect(text).not.toContain('Fed cuts & CPI < 3%?');
+    });
 });

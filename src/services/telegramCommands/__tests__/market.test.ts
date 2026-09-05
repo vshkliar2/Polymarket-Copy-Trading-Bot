@@ -80,4 +80,10 @@ describe('renderMarket', () => {
         );
         expect(text).toContain('closed');
     });
+
+    it('escapes HTML-significant characters in the question', () => {
+        const text = renderMarket(buildMarket({ question: 'Fed cuts & CPI < 3%?' }));
+        expect(text).toContain('Fed cuts &amp; CPI &lt; 3%?');
+        expect(text).not.toContain('Fed cuts & CPI < 3%?');
+    });
 });

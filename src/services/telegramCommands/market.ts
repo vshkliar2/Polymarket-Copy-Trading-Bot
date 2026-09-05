@@ -2,6 +2,7 @@ import { createPublicClient } from '@polymarket/client';
 import type { Market } from '@polymarket/client';
 import type { CommandContext } from './types';
 import { formatError } from '../../utils/errorHelpers';
+import { escapeHtml } from './htmlEscape';
 
 const client = createPublicClient();
 
@@ -28,7 +29,7 @@ const formatPrice = (value: string | null | undefined): string => {
 export const renderMarket = (m: Market): string => {
     const status = m.state.closed ? 'closed' : m.state.active ? 'active' : 'inactive';
     return (
-        `<b>${m.question}</b>\n` +
+        `<b>${escapeHtml(m.question ?? '')}</b>\n` +
         `Yes: ${formatPrice(m.outcomes.yes.price)} | No: ${formatPrice(m.outcomes.no.price)} | Spread: ${formatPrice(m.prices?.spread)}\n` +
         `24h Volume: ${formatUsd(m.metrics?.volume24hr)} | Total Volume: ${formatUsd(m.metrics?.volume)}\n` +
         `Liquidity: ${formatUsd(m.metrics?.liquidity)}\n` +
@@ -38,7 +39,7 @@ export const renderMarket = (m: Market): string => {
 };
 
 export const registerMarketCommand = (ctx: CommandContext): void => {
-    ctx.bot.onText(/\/market (.+)/, async (msg, match) => {
+    ctx.bot.onText(/^\/market(?:\s+(.+))?$/, async (msg, match) => {
         if (!ctx.isAuthorized(msg.chat.id)) {
             return;
         }

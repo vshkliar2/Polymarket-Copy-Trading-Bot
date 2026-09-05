@@ -46,14 +46,20 @@ export const registerAllCommands = (ctx: CommandContext): void => {
             if (result.hasNext) {
                 buttons.push({ text: '▶️ Next', callback_data: `page:${pagerKey}:next` });
             }
-            await ctx.bot.editMessageText(result.text, {
-                chat_id: query.message.chat.id,
-                message_id: query.message.message_id,
-                parse_mode: 'HTML',
-                disable_web_page_preview: true,
-                reply_markup: buttons.length > 0 ? { inline_keyboard: [buttons] } : undefined,
-            });
-            await ctx.bot.answerCallbackQuery(query.id);
+            try {
+                await ctx.bot.editMessageText(result.text, {
+                    chat_id: query.message.chat.id,
+                    message_id: query.message.message_id,
+                    parse_mode: 'HTML',
+                    disable_web_page_preview: true,
+                    reply_markup: buttons.length > 0 ? { inline_keyboard: [buttons] } : undefined,
+                });
+                await ctx.bot.answerCallbackQuery(query.id);
+            } catch (_error) {
+                await ctx.bot.answerCallbackQuery(query.id, {
+                    text: 'Could not update — try the command again.',
+                });
+            }
             return;
         }
 

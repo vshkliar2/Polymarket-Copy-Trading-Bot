@@ -64,7 +64,7 @@ export const registerTraderCommands = (ctx: CommandContext): void => {
         }
     });
 
-    ctx.bot.onText(/\/add (.+)/, async (msg, match) => {
+    ctx.bot.onText(/^\/add(?:\s+(.+))?$/, async (msg, match) => {
         if (!ctx.isAuthorized(msg.chat.id)) {
             return;
         }
@@ -91,7 +91,7 @@ export const registerTraderCommands = (ctx: CommandContext): void => {
         }
     });
 
-    ctx.bot.onText(/\/remove (.+)/, async (msg, match) => {
+    ctx.bot.onText(/^\/remove(?:\s+(.+))?$/, async (msg, match) => {
         if (!ctx.isAuthorized(msg.chat.id)) {
             return;
         }

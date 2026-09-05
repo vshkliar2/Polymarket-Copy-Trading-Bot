@@ -62,4 +62,16 @@ describe('renderActivity', () => {
         const text = renderActivity(buildActivity({ side: 'SELL' }));
         expect(text).toContain('SELL');
     });
+
+    it('escapes HTML-significant characters in the title and slug', () => {
+        const text = renderActivity(
+            buildActivity({
+                title: 'Bitcoin > $150k by December?',
+                slug: 'bitcoin-150k-&-beyond',
+            })
+        );
+        expect(text).toContain('Bitcoin &gt; $150k by December?');
+        expect(text).toContain('href="https://polymarket.com/event/bitcoin-150k-&amp;-beyond"');
+        expect(text).not.toContain('Bitcoin > $150k by December?');
+    });
 });

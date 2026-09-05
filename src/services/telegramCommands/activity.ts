@@ -4,11 +4,12 @@ import { createLazyPager, PAGE_SIZE } from './pagination';
 import publicClient, { ApiActivity } from '../../utils/publicClient';
 import MY_EOA_ADDRESS from '../../utils/getMyEOA';
 import { formatError } from '../../utils/errorHelpers';
+import { escapeHtml } from './htmlEscape';
 
 export const renderActivity = (a: ApiActivity): string => {
     const date = new Date(a.timestamp).toISOString().slice(0, 16).replace('T', ' ');
     return (
-        `<b>${a.side}</b> ${a.size} <a href="https://polymarket.com/event/${a.slug}">${a.title}</a> @ $${a.price.toFixed(2)}\n` +
+        `<b>${a.side}</b> ${a.size} <a href="https://polymarket.com/event/${escapeHtml(a.slug)}">${escapeHtml(a.title)}</a> @ $${a.price.toFixed(2)}\n` +
         `$${a.usdcSize.toFixed(2)} · ${date}`
     );
 };
