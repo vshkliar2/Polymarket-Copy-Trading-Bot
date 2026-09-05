@@ -21,7 +21,7 @@ interface Activity {
 }
 
 const main = async () => {
-    const activities = (await publicClient.getTradeActivity(WALLET)) as unknown as Activity[];
+    const { items: activities } = await publicClient.getTradeActivity(WALLET);
 
     if (!Array.isArray(activities) || activities.length === 0) {
         console.log('No trade data available');

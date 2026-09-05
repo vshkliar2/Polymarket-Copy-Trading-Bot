@@ -353,7 +353,7 @@ const fetchTradeDataForTrader = async ({
 }: TraderModelConfig): Promise<void> => {
     try {
         // Fetch trade activities from Polymarket API
-        const activities = await publicClient.getTradeActivity(address);
+        const { items: activities } = await publicClient.getTradeActivity(address);
 
         if (activities.length === 0) {
             return;

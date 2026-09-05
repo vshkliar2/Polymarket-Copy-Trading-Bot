@@ -135,9 +135,7 @@ const checkDiscrepancy = async () => {
 
         // 6. Check through trade history
         console.log('🔎 CHECK THROUGH TRADE HISTORY:\n');
-        const activities = (await publicClient.getTradeActivity(
-            MY_EOA_ADDRESS
-        )) as unknown as Activity[];
+        const { items: activities } = await publicClient.getTradeActivity(MY_EOA_ADDRESS);
 
         // Group trades by markets
         const marketTrades = new Map<string, { buys: Activity[]; sells: Activity[] }>();

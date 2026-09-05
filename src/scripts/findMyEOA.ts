@@ -76,7 +76,7 @@ async function analyzeWallets() {
     console.log('📋 ШАГ 5: Проверка proxyWallet в транзакциях\n');
 
     try {
-        const activities = await publicClient.getTradeActivity(PROXY_WALLET);
+        const { items: activities } = await publicClient.getTradeActivity(PROXY_WALLET);
 
         if (activities && activities.length > 0) {
             const firstTrade = activities[0];
